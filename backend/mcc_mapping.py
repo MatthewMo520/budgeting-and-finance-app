@@ -1,0 +1,67 @@
+MCC_TO_CATEGORY = {
+    # Food & Drink
+    "5812": "FOOD_AND_DRINK",
+    "5814": "FOOD_AND_DRINK",
+    "5411": "FOOD_AND_DRINK",
+    "5422": "FOOD_AND_DRINK",
+    "5441": "FOOD_AND_DRINK",
+    "5451": "FOOD_AND_DRINK",
+    "5462": "FOOD_AND_DRINK",
+    "5499": "FOOD_AND_DRINK",
+
+    # Transportation
+    "4111": "TRANSPORTATION",
+    "4121": "TRANSPORTATION",
+    "4131": "TRANSPORTATION",
+    "4411": "TRANSPORTATION",
+    "4511": "TRAVEL",
+    "7011": "TRAVEL",
+    "4722": "TRAVEL",
+
+    # General Merchandise
+    "5310": "GENERAL_MERCHANDISE",
+    "5311": "GENERAL_MERCHANDISE",
+    "5331": "GENERAL_MERCHANDISE",
+    "5399": "GENERAL_MERCHANDISE",
+    "5411": "GENERAL_MERCHANDISE",
+    "5651": "GENERAL_MERCHANDISE",
+    "5661": "GENERAL_MERCHANDISE",
+    "5691": "GENERAL_MERCHANDISE",
+    "5732": "GENERAL_MERCHANDISE",
+    "5734": "GENERAL_MERCHANDISE",
+    "5912": "GENERAL_MERCHANDISE",
+    "5999": "GENERAL_MERCHANDISE",
+
+    # Entertainment
+    "7832": "ENTERTAINMENT",
+    "7922": "ENTERTAINMENT",
+    "7991": "ENTERTAINMENT",
+    "7996": "ENTERTAINMENT",
+    "7999": "ENTERTAINMENT",
+    "5735": "ENTERTAINMENT",
+    "5945": "ENTERTAINMENT",
+
+    # Utilities
+    "4900": "RENT_AND_UTILITIES",
+    "4911": "RENT_AND_UTILITIES",
+    "4924": "RENT_AND_UTILITIES",
+    "4941": "RENT_AND_UTILITIES",
+    "4814": "RENT_AND_UTILITIES",
+
+    # Loan payments
+    "6012": "LOAN_PAYMENTS",
+    "6051": "LOAN_PAYMENTS",
+    "6011": "LOAN_PAYMENTS",
+
+    # Personal care
+    "7230": "PERSONAL_CARE",
+    "7297": "PERSONAL_CARE",
+    "7298": "PERSONAL_CARE",
+
+    # Transfer
+    "6536": "TRANSFER_OUT",
+    "6537": "TRANSFER_OUT",
+}
+
+def mcc_to_category(mcc: str) -> str:
+    return MCC_TO_CATEGORY.get(str(mcc), "GENERAL_MERCHANDISE")

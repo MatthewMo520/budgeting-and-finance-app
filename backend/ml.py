@@ -5,13 +5,28 @@ from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from seed_data import SEED_TRANSACTIONS
+from load_kaggle_data import load_kaggle_training_data
 import pickle
 
 def train_categorizer(db: Session):
     txns = db.query(Transaction).filter(Transaction.category != None).all()
 
-    names = [t.name for t in txns] + [s[0] for s in SEED_TRANSACTIONS]
-    categories = [t.category for t in txns] + [s[2] for s in SEED_TRANSACTIONS]
+    db_names = [t.name for t in txns]
+    db_categories = [t.category for t in txns]
+
+    seed_names = [s[0] for s in SEED_TRANSACTIONS]
+    seed_categories = [s[2] for s in SEED_TRANSACTIONS]
+
+    try:
+        kaggle_names, kaggle_categories = load_kaggle_training_data()
+    except Exception as e:
+        print(f"Kaggle data not loaded: {e}")
+        kaggle_names, kaggle_categories = [], []
+
+    names = [str(n) for n in db_names + seed_names + kaggle_names]
+    categories = db_categories + seed_categories + kaggle_categories
+
+    print(f"Training on {len(names)} total samples")
 
     pipeline = Pipeline([
         ("tfidf", TfidfVectorizer()),
@@ -24,8 +39,10 @@ def train_categorizer(db: Session):
 
     return pipeline
 
+
 def predict_category(name: str, pipeline) -> str:
     return pipeline.predict([name])[0]
+
 
 def train_anomaly_detector(db: Session):
     txns = db.query(Transaction).all()
@@ -39,6 +56,7 @@ def train_anomaly_detector(db: Session):
 
     return iso
 
+
 def run_ml_pipeline(db: Session):
     categorizer = train_categorizer(db)
     anomaly_detector = train_anomaly_detector(db)
@@ -51,4 +69,7 @@ def run_ml_pipeline(db: Session):
         t.anomaly_score = float(score)
 
     db.commit()
-    return {"categorized": len(txns), "anomalies": sum(1 for t in txns if t.is_anomaly)}
+    return {
+        "categorized": len(txns),
+        "anomalies": sum(1 for t in txns if t.is_anomaly)
+    }
