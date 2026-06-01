@@ -4,6 +4,7 @@ from database import engine, Base, get_db
 from models import User, Transaction
 from plaid_client import create_sandbox_token, exchange_public_token, get_transactions
 from datetime import datetime
+from ml import run_ml_pipeline
 
 app = FastAPI()
 Base.metadata.create_all(bind=engine)
@@ -40,3 +41,8 @@ def setup_sandbox(db: Session = Depends(get_db)):
     db.commit()
 
     return {"user_id": str(user.id), "transactions_stored": len(transactions)}
+
+@app.post("/run-ml")
+def run_ml(db: Session = Depends(get_db)):
+    result = run_ml_pipeline(db)
+    return result

@@ -4,3 +4,6 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 plaid-python
+scikit-learn
+pandas
+numpy
