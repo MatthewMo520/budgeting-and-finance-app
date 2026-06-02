@@ -46,3 +46,20 @@ def setup_sandbox(db: Session = Depends(get_db)):
 def run_ml(db: Session = Depends(get_db)):
     result = run_ml_pipeline(db)
     return result
+
+@app.get("/transactions")
+def get_transactions_endpoint(db: Session = Depends(get_db)):
+    txns = db.query(Transaction).all()
+    return [
+        {
+            "id": str(t.id),
+            "name": t.name,
+            "amount": t.amount,
+            "date": t.date.isoformat(),
+            "category": t.category,
+            "ml_category": t.ml_category,
+            "is_anomaly": t.is_anomaly,
+            "anomaly_score": t.anomaly_score
+        }
+        for t in txns
+    ]
