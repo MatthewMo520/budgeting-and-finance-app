@@ -9,7 +9,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch("http://localhost:8000/transactions")
+    fetch(`${import.meta.env.VITE_API_URL}/transactions`)
       .then(res => res.json())
       .then(data => {
         setTransactions(data)
