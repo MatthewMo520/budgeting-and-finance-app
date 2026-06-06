@@ -5,8 +5,17 @@ from models import User, Transaction
 from plaid_client import create_sandbox_token, exchange_public_token, get_transactions
 from datetime import datetime
 from ml import run_ml_pipeline
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 Base.metadata.create_all(bind=engine)
 
 @app.get("/")

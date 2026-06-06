@@ -9,7 +9,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch("/api/transactions")
+    fetch("http://localhost:8000/transactions")
       .then(res => res.json())
       .then(data => {
         setTransactions(data)
