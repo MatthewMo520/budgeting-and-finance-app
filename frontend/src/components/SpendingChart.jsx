@@ -1,57 +1,105 @@
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from "recharts"
+import { useEffect, useState } from "react"
+import { CAT } from "../categories.jsx"
 
-const COLORS = ["#1D9E75","#D85A30","#378ADD","#7F77DD","#888780","#B4B2A9"]
+const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtK = (n) => n >= 1000 ? "$" + (n / 1000).toFixed(1) + "k" : "$" + Math.round(n)
 
-export default function SpendingChart({ categoryTotals, totalSpend }) {
-  const data = Object.entries(categoryTotals)
-    .sort((a,b) => b[1]-a[1])
-    .map(([category, amount], i) => ({
-      category: category.replace(/_/g," "),
-      amount: parseFloat(amount.toFixed(2)),
-      color: COLORS[i % COLORS.length]
-    }))
+function getCatEntries(categoryTotals) {
+  return Object.entries(categoryTotals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([name, val]) => ({ name, val, ...(CAT[name] || CAT.Other) }))
+}
+
+function DonutChart({ categoryTotals, totalSpend }) {
+  const [on, setOn] = useState(false)
+  const cats = getCatEntries(categoryTotals)
+
+  useEffect(() => {
+    setOn(false)
+    const t = setTimeout(() => setOn(true), 120)
+    return () => clearTimeout(t)
+  }, [categoryTotals])
+
+  if (!totalSpend) return null
+
+  const cx = 100, cy = 100, OR = 84, IR = 54, GAP = 2.5
+  let ang = -90
+  const segs = cats.map(({ name, val, color }) => {
+    const pct = val / totalSpend
+    const sweep = Math.max(pct * 360 - GAP, 0.5)
+    const s = ang + GAP / 2, e = s + sweep
+    ang += pct * 360
+    const r = d => d * Math.PI / 180
+    const P = (a, R) => [cx + R * Math.cos(r(a)), cy + R * Math.sin(r(a))]
+    const [x1, y1] = P(s, OR), [x2, y2] = P(e, OR)
+    const [x3, y3] = P(e, IR), [x4, y4] = P(s, IR)
+    const la = sweep > 180 ? 1 : 0
+    const d = `M${x1} ${y1} A${OR} ${OR} 0 ${la} 1 ${x2} ${y2} L${x3} ${y3} A${IR} ${IR} 0 ${la} 0 ${x4} ${y4}Z`
+    return { name, val, pct, color, d }
+  })
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-      <div className="rounded-xl p-4" style={{background:"#1a1d27",border:"1px solid #2a2d3a"}}>
-        <p className="text-sm font-medium text-gray-300 mb-4">Spending by category</p>
-        <div className="space-y-3">
-          {data.map(d => (
-            <div key={d.category} className="flex items-center gap-3">
-              <span className="text-xs text-gray-400 w-32 shrink-0">{d.category}</span>
-              <div className="flex-1 h-2 rounded-full" style={{background:"#2a2d3a"}}>
-                <div
-                  className="h-2 rounded-full"
-                  style={{
-                    width: `${(d.amount / data[0].amount) * 100}%`,
-                    background: d.color
-                  }}
-                />
+    <div className="donut-wrap">
+      <svg viewBox="0 0 200 200" width="196" height="196">
+        {segs.map((s, i) => (
+          <path key={i} d={s.d} fill={s.color} style={{
+            transformOrigin: "100px 100px",
+            transform: on ? "scale(1)" : "scale(0.82)",
+            opacity: on ? 1 : 0,
+            transition: `transform .55s cubic-bezier(.34,1.4,.64,1) ${i * .06}s, opacity .3s ease ${i * .06}s`,
+          }} />
+        ))}
+        <text x="100" y="92" textAnchor="middle" fontSize="21" fontWeight="700" fill="#1a1714" fontFamily="DM Sans,system-ui,sans-serif">{fmtK(totalSpend)}</text>
+        <text x="100" y="111" textAnchor="middle" fontSize="11.5" fill="#78716c" fontFamily="DM Sans,system-ui,sans-serif">total</text>
+      </svg>
+      <div className="donut-legend">
+        {segs.map((s, i) => (
+          <div key={i} className="legend-row">
+            <span className="legend-dot" style={{ background: s.color }} />
+            <span className="legend-name">{s.name}</span>
+            <span className="legend-pct">{Math.round(s.pct * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function SpendingChart({ categoryTotals, totalSpend }) {
+  const [on, setOn] = useState(false)
+  const cats = getCatEntries(categoryTotals)
+  const max = cats[0]?.val || 1
+
+  useEffect(() => {
+    setOn(false)
+    const t = setTimeout(() => setOn(true), 160)
+    return () => clearTimeout(t)
+  }, [categoryTotals])
+
+  return (
+    <div className="charts-grid">
+      <div className="chart-card">
+        <div className="chart-title">Spending by category</div>
+        <div className="bar-rows">
+          {cats.map(({ name, val, color }, i) => (
+            <div key={name} className="bar-row">
+              <span className="bar-label">{name}</span>
+              <div className="bar-track">
+                <div className="bar-fill" style={{
+                  width: on ? `${(val / max) * 100}%` : "0%",
+                  background: color,
+                  transition: `width .85s cubic-bezier(.4,0,.2,1) ${i * .07}s`,
+                }} />
               </div>
-              <span className="text-xs text-gray-300 w-16 text-right">${d.amount.toFixed(0)}</span>
+              <span className="bar-amt" style={{ color }}>{fmt(val)}</span>
             </div>
           ))}
         </div>
       </div>
-
-      <div className="rounded-xl p-4 flex flex-col items-center" style={{background:"#1a1d27",border:"1px solid #2a2d3a"}}>
-        <p className="text-sm font-medium text-gray-300 mb-4 self-start">Category split</p>
-        <ResponsiveContainer width="100%" height={160}>
-          <PieChart>
-            <Pie data={data} dataKey="amount" nameKey="category" innerRadius={50} outerRadius={75} paddingAngle={2}>
-              {data.map((d, i) => <Cell key={i} fill={d.color} />)}
-            </Pie>
-            <Tooltip formatter={(val) => `$${val.toFixed(2)}`} contentStyle={{background:"#1a1d27",border:"1px solid #2a2d3a",borderRadius:8,color:"#fff"}} />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 w-full">
-          {data.map(d => (
-            <div key={d.category} className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full shrink-0" style={{background:d.color}}/>
-              <span className="text-xs text-gray-400">{d.category} {((d.amount/totalSpend)*100).toFixed(0)}%</span>
-            </div>
-          ))}
-        </div>
+      <div className="chart-card">
+        <div className="chart-title">Category split</div>
+        <DonutChart categoryTotals={categoryTotals} totalSpend={totalSpend} />
       </div>
     </div>
   )

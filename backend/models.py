@@ -8,7 +8,17 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+    is_verified = Column(Boolean, default=False)
+    verification_token = Column(String, nullable=True)
     plaid_access_token = Column(String, nullable=True)
+    totp_secret = Column(String, nullable=True)
+    totp_enabled = Column(Boolean, default=False)
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
+    username = Column(String, nullable=True)
+    profile_picture = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

@@ -1,34 +1,48 @@
-export default function MetricCards({ totalSpend, transactionCount, anomalyCount, topCategory }) {
+const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+export default function MetricCards({ totalSpend, prevSpend, transactionCount, anomalyCount, topCategory }) {
+  const pct = prevSpend > 0 ? ((totalSpend - prevSpend) / prevSpend) * 100 : null
+
   const cards = [
     {
       label: "Monthly spend",
-      value: `$${totalSpend.toFixed(2)}`,
-      sub: null
+      value: fmt(totalSpend),
+      sub: pct !== null
+        ? { cls: pct > 0 ? "red" : "green", text: `${pct > 0 ? "↑" : "↓"} ${Math.abs(pct).toFixed(0)}% vs last month` }
+        : { cls: "muted", text: "No previous month data" },
     },
     {
       label: "Transactions",
       value: transactionCount,
-      sub: <span className="text-green-400 text-xs">Normal range</span>
+      sub: { cls: "muted", text: "Normal range" },
     },
     {
       label: "Anomalies flagged",
       value: anomalyCount,
-      sub: anomalyCount > 0 ? <span className="text-amber-400 text-xs">Needs review</span> : <span className="text-green-400 text-xs">All clear</span>
+      valueColor: anomalyCount > 0 ? "#dc2626" : "#16a34a",
+      sub: anomalyCount > 0
+        ? { cls: "amber", text: "Needs review" }
+        : { cls: "green", text: "All clear" },
     },
     {
       label: "Top category",
-      value: topCategory?.[0]?.replace(/_/g," "),
-      sub: topCategory ? <span className="text-green-400 text-xs">${topCategory[1].toFixed(2)} this month</span> : null
+      value: topCategory?.[0]?.replace(/_/g, " ") ?? "—",
+      valueSize: 22,
+      sub: topCategory
+        ? { cls: "green", text: `${fmt(topCategory[1])} this month` }
+        : { cls: "muted", text: "No data" },
     },
   ]
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div className="metric-grid">
       {cards.map(card => (
-        <div key={card.label} className="rounded-xl p-4" style={{background:"#1a1d27",border:"1px solid #2a2d3a"}}>
-          <p className="text-xs text-gray-400 mb-2">{card.label}</p>
-          <p className="text-2xl font-semibold text-white mb-1">{card.value}</p>
-          {card.sub}
+        <div key={card.label} className="mcard">
+          <div className="mcard-label">{card.label}</div>
+          <div className="mcard-value" style={{ color: card.valueColor, fontSize: card.valueSize }}>
+            {card.value}
+          </div>
+          <div className={`mcard-sub ${card.sub.cls}`}>{card.sub.text}</div>
         </div>
       ))}
     </div>

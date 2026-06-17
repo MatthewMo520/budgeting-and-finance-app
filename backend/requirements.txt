@@ -7,3 +7,13 @@ plaid-python
 scikit-learn
 pandas
 numpy
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.0.1
+sendgrid
+pyotp
+qrcode[pil]
+python-multipart
+slowapi
+zxcvbn
+email-validator

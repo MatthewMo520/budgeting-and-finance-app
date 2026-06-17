@@ -1,43 +1,73 @@
-const CATEGORY_ICONS = {
-  FOOD_AND_DRINK: "🍔",
-  TRANSPORTATION: "🚗",
-  TRAVEL: "✈️",
-  ENTERTAINMENT: "🎬",
-  GENERAL_MERCHANDISE: "🛍️",
-  RENT_AND_UTILITIES: "⚡",
-  LOAN_PAYMENTS: "💳",
-  TRANSFER_OUT: "↗️",
-  TRANSFER_IN: "↙️",
-  PERSONAL_CARE: "💆",
+import { useState, useEffect } from "react"
+import { displayCat, catStyle, ICONS } from "../categories.jsx"
+
+const fmt = (n) => "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+function CatIcon({ mlCategory }) {
+  const name = displayCat(mlCategory)
+  const { color, bg } = catStyle(mlCategory)
+  return (
+    <div className="txicon" style={{ width: 40, height: 40, background: bg, color }}>
+      {ICONS[name] || ICONS.Other}
+    </div>
+  )
 }
 
 export default function TransactionList({ transactions }) {
+  const [filter, setFilter] = useState("all")
+  const [showAll, setShowAll] = useState(false)
+
+  useEffect(() => { setFilter("all"); setShowAll(false) }, [transactions])
+
+  const anomalyCount = transactions.filter(t => t.is_anomaly).length
+  const filtered = filter === "anomalies" ? transactions.filter(t => t.is_anomaly) : transactions
+  const shown = showAll ? filtered : filtered.slice(0, 7)
+
   return (
-    <div className="rounded-xl p-4" style={{background:"#1a1d27",border:"1px solid #2a2d3a"}}>
-      <p className="text-sm font-medium text-gray-300 mb-4">Recent transactions</p>
-      <div className="space-y-1">
-        {transactions.map(t => (
-          <div key={t.id} className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0"
-              style={{background:"#2a2d3a"}}>
-              {CATEGORY_ICONS[t.ml_category] || "💰"}
+    <div className="txcard">
+      <div className="txcard-hdr">
+        <div className="txcard-title">Recent transactions</div>
+        <div className="filter-row">
+          <button className={`filter-btn ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
+            All
+          </button>
+          <button className={`filter-btn ${filter === "anomalies" ? "active" : ""}`} onClick={() => setFilter("anomalies")}>
+            Anomalies {anomalyCount > 0 && `(${anomalyCount})`}
+          </button>
+        </div>
+      </div>
+
+      <div className="txlist">
+        {shown.map(t => (
+          <div key={t.id} className="txrow">
+            <CatIcon mlCategory={t.ml_category} />
+            <div className="txinfo">
+              <div className="txname">{t.name}</div>
+              <div className="txmeta">{displayCat(t.ml_category)} · auto-categorized</div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{t.name}</p>
-              <p className="text-xs text-gray-500">
-                {t.ml_category?.replace(/_/g," ")} · auto-categorized · {t.date.slice(0,10)}
-              </p>
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-sm font-medium text-white">${Math.abs(t.amount).toFixed(2)}</p>
-              {t.is_anomaly
-                ? <span className="text-xs font-medium text-amber-400">anomaly</span>
-                : <span className="text-xs font-medium text-green-400">normal</span>
-              }
+            <div className="txright">
+              <div className="txamt">-{fmt(t.amount)}</div>
+              <div className="txdate">{t.date?.slice(0, 10)}</div>
+              <div>
+                {t.is_anomaly
+                  ? <span className="badge badge-anom">anomaly</span>
+                  : <span className="badge badge-norm">normal</span>}
+              </div>
             </div>
           </div>
         ))}
+        {filtered.length === 0 && (
+          <div style={{ padding: "32px", textAlign: "center", color: "var(--text2)", fontSize: 14 }}>
+            No transactions found.
+          </div>
+        )}
       </div>
+
+      {filtered.length > 7 && (
+        <button className="txmore" onClick={() => setShowAll(v => !v)}>
+          {showAll ? "Show less ↑" : `Show ${filtered.length - 7} more transactions ↓`}
+        </button>
+      )}
     </div>
   )
 }
