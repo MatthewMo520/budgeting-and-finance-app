@@ -26,7 +26,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     plaid_transaction_id = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
     amount = Column(Float, nullable=False)

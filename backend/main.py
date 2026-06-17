@@ -87,7 +87,7 @@ def exchange_token(
     start = end - timedelta(days=365)
     transactions = pc.get_transactions(access_token, start, end)
     added = _upsert_transactions(db, current_user.id, transactions)
-    run_ml_pipeline(db)
+    run_ml_pipeline(db, current_user.id)
     return {"transactions_synced": added}
 
 
@@ -108,7 +108,7 @@ def sync_transactions(
     transactions = pc.get_transactions(current_user.plaid_access_token, start, end)
     added = _upsert_transactions(db, current_user.id, transactions)
     if added > 0:
-        run_ml_pipeline(db)
+        run_ml_pipeline(db, current_user.id)
     return {"transactions_synced": added, "message": f"Synced {added} new transactions"}
 
 
@@ -144,7 +144,7 @@ def run_ml(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = run_ml_pipeline(db)
+    result = run_ml_pipeline(db, current_user.id)
     return result
 
 
@@ -193,12 +193,16 @@ def get_available_months(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
+    # Fetch existing ids once and dedupe in memory instead of one query per txn.
+    existing = {
+        row[0] for row in db.query(Transaction.plaid_transaction_id)
+        .filter(Transaction.user_id == user_id).all()
+    }
     added = 0
     for t in plaid_txns:
-        if db.query(Transaction).filter(
-            Transaction.plaid_transaction_id == t.transaction_id
-        ).first():
+        if t.transaction_id in existing:
             continue
+        existing.add(t.transaction_id)
         txn = Transaction(
             user_id=user_id,
             plaid_transaction_id=t.transaction_id,

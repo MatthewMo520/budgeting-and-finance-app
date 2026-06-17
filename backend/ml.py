@@ -6,14 +6,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from seed_data import SEED_TRANSACTIONS
 from load_kaggle_data import load_kaggle_training_data
-import pickle
 
-def train_categorizer(db: Session):
-    txns = db.query(Transaction).filter(Transaction.category != None).all()
+# The categorizer is trained on a static corpus (hand-labeled seed data + the
+# Kaggle dataset) and cached in memory, so it is built once per process instead
+# of being retrained on every bank link / sync. It contains no user data, which
+# also avoids leaking one user's transactions into another's model.
+_categorizer = None
 
-    db_names = [t.name for t in txns]
-    db_categories = [t.category for t in txns]
 
+def _build_categorizer():
     seed_names = [s[0] for s in SEED_TRANSACTIONS]
     seed_categories = [s[2] for s in SEED_TRANSACTIONS]
 
@@ -23,53 +24,54 @@ def train_categorizer(db: Session):
         print(f"Kaggle data not loaded: {e}")
         kaggle_names, kaggle_categories = [], []
 
-    names = [str(n) for n in db_names + seed_names + kaggle_names]
-    categories = db_categories + seed_categories + kaggle_categories
+    names = [str(n) for n in seed_names + kaggle_names]
+    categories = seed_categories + kaggle_categories
 
-    print(f"Training on {len(names)} total samples")
-
+    print(f"Training categorizer on {len(names)} static samples")
     pipeline = Pipeline([
         ("tfidf", TfidfVectorizer()),
-        ("clf", RandomForestClassifier(n_estimators=100, random_state=42))
+        ("clf", RandomForestClassifier(n_estimators=100, random_state=42)),
     ])
     pipeline.fit(names, categories)
-
-    with open("categorizer.pkl", "wb") as f:
-        pickle.dump(pipeline, f)
-
     return pipeline
 
 
-def predict_category(name: str, pipeline) -> str:
-    return pipeline.predict([name])[0]
+def get_categorizer():
+    global _categorizer
+    if _categorizer is None:
+        _categorizer = _build_categorizer()
+    return _categorizer
 
 
-def train_anomaly_detector(db: Session):
-    txns = db.query(Transaction).all()
+def run_ml_pipeline(db: Session, user_id):
+    """Categorize transactions and flag anomalies for a single user only.
+
+    The anomaly detector is fit on this user's amounts so flags are relative to
+    their own spending, and predictions are written only for their rows.
+    """
+    categorizer = get_categorizer()
+
+    txns = db.query(Transaction).filter(Transaction.user_id == user_id).all()
+    if not txns:
+        return {"categorized": 0, "anomalies": 0}
+
+    # Categorize (one batched predict over the user's transaction names)
+    predicted = categorizer.predict([str(t.name) for t in txns])
+    for t, cat in zip(txns, predicted):
+        t.ml_category = cat
+
+    # Anomaly detection on this user's amounts only
     amounts = np.array([t.amount for t in txns]).reshape(-1, 1)
-
     iso = IsolationForest(contamination=0.15, random_state=42)
     iso.fit(amounts)
-
-    with open("anomaly.pkl", "wb") as f:
-        pickle.dump(iso, f)
-
-    return iso
-
-
-def run_ml_pipeline(db: Session):
-    categorizer = train_categorizer(db)
-    anomaly_detector = train_anomaly_detector(db)
-
-    txns = db.query(Transaction).all()
-    for t in txns:
-        t.ml_category = predict_category(t.name, categorizer)
-        score = anomaly_detector.decision_function([[t.amount]])[0]
-        t.is_anomaly = bool(anomaly_detector.predict([[t.amount]])[0] == -1)
+    scores = iso.decision_function(amounts)
+    preds = iso.predict(amounts)
+    for t, score, pred in zip(txns, scores, preds):
         t.anomaly_score = float(score)
+        t.is_anomaly = bool(pred == -1)
 
     db.commit()
     return {
         "categorized": len(txns),
-        "anomalies": sum(1 for t in txns if t.is_anomaly)
+        "anomalies": int(sum(1 for t in txns if t.is_anomaly)),
     }
