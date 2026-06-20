@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from database import Base
+from crypto import EncryptedString
 import uuid
 from datetime import datetime
 
@@ -12,7 +13,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_verified = Column(Boolean, default=False)
     verification_token = Column(String, nullable=True)
-    plaid_access_token = Column(String, nullable=True)
+    plaid_access_token = Column(EncryptedString, nullable=True)
     totp_secret = Column(String, nullable=True)
     totp_enabled = Column(Boolean, default=False)
     reset_token = Column(String, nullable=True)

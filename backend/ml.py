@@ -43,6 +43,18 @@ def get_categorizer():
     return _categorizer
 
 
+def run_ml_for_user(user_id):
+    """Background-task entry point: opens its own DB session and runs the
+    pipeline. Used so ML doesn't block the HTTP response (the request-scoped
+    session is already closed by the time a BackgroundTask runs)."""
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        run_ml_pipeline(db, user_id)
+    finally:
+        db.close()
+
+
 def run_ml_pipeline(db: Session, user_id):
     """Categorize transactions and flag anomalies for a single user only.
 

@@ -1,10 +1,13 @@
+import json
 import os
 import time
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, Depends, Query, HTTPException, Request
+import plaid
+from fastapi import FastAPI, Depends, Query, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -15,7 +18,7 @@ from sqlalchemy.orm import Session
 from database import engine, Base, get_db
 from models import User, Transaction
 import plaid_client as pc
-from ml import run_ml_pipeline
+from ml import run_ml_pipeline, run_ml_for_user
 from auth import get_current_user
 from auth_routes import router as auth_router
 
@@ -49,6 +52,24 @@ async def security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
     return response
 
+# ── Plaid error handling ──────────────────────────────────────────────────────
+@app.exception_handler(plaid.ApiException)
+def plaid_exception_handler(request: Request, exc: plaid.ApiException):
+    """Turn raw Plaid API exceptions into clean JSON instead of a 500 stack trace."""
+    code, msg = "PLAID_ERROR", "There was a problem connecting to your bank. Please try again."
+    try:
+        err = json.loads(exc.body)
+        code = err.get("error_code") or code
+        if err.get("error_message"):
+            msg = err["error_message"]
+    except (ValueError, TypeError):
+        pass
+    # 400 for user-actionable errors; 502 for upstream/transient Plaid failures.
+    user_actionable = {"ITEM_LOGIN_REQUIRED", "INVALID_CREDENTIALS", "INVALID_INPUT"}
+    status_code = 400 if code in user_actionable else 502
+    return JSONResponse(status_code=status_code, content={"detail": msg, "error_code": code})
+
+
 Base.metadata.create_all(bind=engine)
 app.include_router(auth_router)
 
@@ -76,6 +97,7 @@ class ExchangeTokenRequest(BaseModel):
 def exchange_token(
     request: Request,
     body: ExchangeTokenRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -87,7 +109,7 @@ def exchange_token(
     start = end - timedelta(days=365)
     transactions = pc.get_transactions(access_token, start, end)
     added = _upsert_transactions(db, current_user.id, transactions)
-    run_ml_pipeline(db, current_user.id)
+    background_tasks.add_task(run_ml_for_user, current_user.id)
     return {"transactions_synced": added}
 
 
@@ -97,6 +119,7 @@ def exchange_token(
 @limiter.limit("10/minute")
 def sync_transactions(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -108,7 +131,7 @@ def sync_transactions(
     transactions = pc.get_transactions(current_user.plaid_access_token, start, end)
     added = _upsert_transactions(db, current_user.id, transactions)
     if added > 0:
-        run_ml_pipeline(db, current_user.id)
+        background_tasks.add_task(run_ml_for_user, current_user.id)
     return {"transactions_synced": added, "message": f"Synced {added} new transactions"}
 
 
@@ -121,6 +144,10 @@ def setup_sandbox(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Dev-only: never allow fake data to overwrite a real linked account in prod.
+    if os.getenv("PLAID_ENV") == "production":
+        raise HTTPException(status_code=403, detail="Sandbox setup is disabled in production.")
+
     public_token = pc.create_sandbox_token()
     access_token = pc.exchange_public_token(public_token)
     current_user.plaid_access_token = access_token
