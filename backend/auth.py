@@ -87,6 +87,14 @@ def generate_verification_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def hash_token(token: str) -> str:
+    """Deterministic hash for storing email-verification / password-reset tokens
+    at rest. These are bearer secrets — a DB leak of raw tokens would allow
+    account takeover. We store sha256(token) and look up by the same hash."""
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),

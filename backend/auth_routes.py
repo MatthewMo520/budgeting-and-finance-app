@@ -15,7 +15,7 @@ from auth import (
     SECRET_KEY, ALGORITHM,
     hash_password, verify_password,
     create_access_token, create_refresh_token, create_totp_challenge_token,
-    generate_verification_token, get_current_user,
+    generate_verification_token, get_current_user, hash_token,
     set_refresh_cookie, clear_refresh_cookie,
 )
 from database import get_db
@@ -65,30 +65,33 @@ class ResetPasswordRequest(BaseModel):
 @router.post("/register", status_code=201)
 @limiter.limit("5/minute")
 def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == body.email).first():
-        raise HTTPException(status_code=409, detail="Email already registered")
-
     # Password strength — require score ≥ 2 (zxcvbn scale 0–4)
     strength = zxcvbn(body.password, user_inputs=[body.email])
     if strength["score"] < 2:
         suggestion = strength["feedback"]["suggestions"][0] if strength["feedback"]["suggestions"] else "Choose a stronger password."
         raise HTTPException(status_code=422, detail=f"Password too weak. {suggestion}")
 
-    verification_token = generate_verification_token()
+    # Generic response whether or not the email exists, to avoid leaking which
+    # emails have accounts (user enumeration). Only create if it's new.
+    generic = {"message": "If that email is available, a verification link has been sent."}
+    if db.query(User).filter(User.email == body.email).first():
+        return generic
+
+    raw_token = generate_verification_token()
     user = User(
         email=body.email,
         hashed_password=hash_password(body.password),
-        verification_token=verification_token,
+        verification_token=hash_token(raw_token),
     )
     db.add(user)
     db.commit()
 
     try:
-        send_verification_email(body.email, verification_token)
+        send_verification_email(body.email, raw_token)
     except Exception:
         pass
 
-    return {"message": "Account created. Check your email to verify your address."}
+    return generic
 
 
 # ── Verify email ──────────────────────────────────────────────────────────────
@@ -96,7 +99,7 @@ def register(request: Request, body: RegisterRequest, db: Session = Depends(get_
 @router.post("/verify-email")
 @limiter.limit("10/minute")
 def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.verification_token == body.token).first()
+    user = db.query(User).filter(User.verification_token == hash_token(body.token)).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
@@ -268,13 +271,13 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
     if not user:
         return {"message": "If that email exists you'll receive a reset link shortly."}
 
-    token = generate_verification_token()
-    user.reset_token = token
+    raw_token = generate_verification_token()
+    user.reset_token = hash_token(raw_token)
     user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
     db.commit()
 
     try:
-        send_password_reset_email(body.email, token)
+        send_password_reset_email(body.email, raw_token)
     except Exception:
         pass
 
@@ -291,7 +294,7 @@ def reset_password(request: Request, body: ResetPasswordRequest, db: Session = D
         suggestion = strength["feedback"]["suggestions"][0] if strength["feedback"]["suggestions"] else "Choose a stronger password."
         raise HTTPException(status_code=422, detail=f"Password too weak. {suggestion}")
 
-    user = db.query(User).filter(User.reset_token == body.token).first()
+    user = db.query(User).filter(User.reset_token == hash_token(body.token)).first()
     if not user or not user.reset_token_expires or user.reset_token_expires < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Invalid or expired reset link")
 
@@ -397,7 +400,13 @@ def update_profile(
             raise HTTPException(status_code=409, detail="Username already taken")
         current_user.username = username
     if body.profile_picture is not None:
-        current_user.profile_picture = body.profile_picture
+        pic = body.profile_picture
+        if pic:  # non-empty means a new image; empty/None clears it
+            if not pic.startswith("data:image/"):
+                raise HTTPException(status_code=422, detail="Profile picture must be an image data URL")
+            if len(pic) > 3_000_000:  # ~2MB image once base64-encoded
+                raise HTTPException(status_code=422, detail="Image too large (max ~2MB)")
+        current_user.profile_picture = pic or None
     db.commit()
     return {"message": "Profile updated."}
 
