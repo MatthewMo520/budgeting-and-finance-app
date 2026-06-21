@@ -6,8 +6,6 @@ import qrcode
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from zxcvbn import zxcvbn
 
@@ -22,8 +20,9 @@ from database import get_db
 from email_utils import send_verification_email, send_password_reset_email
 from models import User
 
+from rate_limit import limiter
+
 router = APIRouter(prefix="/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 # Valid bcrypt hash used to equalize login timing when the email doesn't exist.
 _DUMMY_HASH = "$2b$12$tXLlfUbtlsQZHT6jlHiQ/.r0Q0H0n1rxv5WXxoD4uoEX5FmTQWfiq"

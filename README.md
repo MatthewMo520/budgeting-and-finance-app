@@ -24,7 +24,7 @@ Try it without creating an account or linking a real bank:
 
 ## ML layer
 
-- **Anomaly detection (unsupervised):** `IsolationForest`, fit **per user** on their own transaction amounts, so "unusual" is relative to that person's spending. Plaid doesn't provide this.
+- **Anomaly detection (unsupervised):** `IsolationForest`, fit **per user** on a 3-feature matrix — absolute amount, amount relative to its category's average, and day-of-month — so "unusual" is relative to that person's own patterns (a big-but-normal Rent charge isn't flagged, an oversized Dining charge is). Plaid doesn't provide this.
 - **Categorization (layered):** a precedence chain — high-precision **keyword rules** (bank-statement patterns like payroll → Income, card payment → Loan) → **Plaid's `personal_finance_category`** → a **TF-IDF (char n-grams) + Random Forest** classifier as the ML fallback. Char n-grams let the model generalize to dirty/unseen names (e.g. `McDonald's` matches a `McDonalds` example). The categorizer is trained once and cached in memory.
 
 ## Stack
@@ -42,7 +42,7 @@ Try it without creating an account or linking a real bank:
 - JWT revocation via a per-user `token_version`; password change/reset revokes existing sessions
 - Plaid access tokens encrypted at rest (Fernet); email-verification / password-reset tokens stored as SHA-256 hashes; TOTP secrets encrypted
 - Re-authentication required to disable 2FA or delete an account
-- Rate limiting, security headers (incl. HSTS), CORS allow-list, timing-safe login, zxcvbn password strength
+- Redis-backed rate limiting (proxy-aware), security headers (incl. HSTS), CORS allow-list, timing-safe login, zxcvbn password strength
 
 ## Running locally
 
@@ -78,6 +78,7 @@ FRONTEND_URL=http://localhost:5173
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 COOKIE_SECURE=false         # true in prod (https)
 COOKIE_SAMESITE=lax         # none in prod if frontend/backend are different domains
+REDIS_URL=                  # rate-limit store (optional locally; set in prod)
 DEMO_EMAIL=                 # optional — shared demo account (auto-provisioned on startup)
 DEMO_PASSWORD=
 ```

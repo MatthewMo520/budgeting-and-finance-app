@@ -180,7 +180,7 @@ function Dashboard() {
   }, [selectedMonth])
 
   function handleBankLinked(count) {
-    setSynced(count)
+    setSynced({ count })
     loadMonths()
   }
 
@@ -188,9 +188,15 @@ function Dashboard() {
     setSyncing(true)
     try {
       const res = await apiFetch("/plaid/sync", { method: "POST" })
-      const data = await res.json()
-      setSynced(data.transactions_synced)
-      if (data.transactions_synced > 0) loadMonths()
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setSynced({ error: data.detail || "Sync failed. Please try again." })
+      } else {
+        setSynced({ count: data.transactions_synced })
+        if (data.transactions_synced > 0) loadMonths()
+      }
+    } catch {
+      setSynced({ error: "Sync failed. Please try again." })
     } finally {
       setSyncing(false)
     }
@@ -240,8 +246,14 @@ function Dashboard() {
       ) : (
         <div key={dashKey} className="dash fadein">
           {synced !== null && (
-            <div className="sync-banner">
-              <span>✓ Synced {synced} transactions. Run ML to categorize them.</span>
+            <div className="sync-banner" style={synced.error ? { background: "#fef2f2", borderColor: "#fecaca", color: "#dc2626" } : undefined}>
+              <span>
+                {synced.error
+                  ? `⚠ ${synced.error}`
+                  : synced.count > 0
+                    ? `✓ Synced ${synced.count} new transaction${synced.count === 1 ? "" : "s"}. Categorizing in the background…`
+                    : "✓ You're up to date — no new transactions."}
+              </span>
               <button className="sync-dismiss" onClick={() => setSynced(null)}>Dismiss</button>
             </div>
           )}

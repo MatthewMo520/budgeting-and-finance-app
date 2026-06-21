@@ -16,5 +16,6 @@ pyotp
 qrcode[pil]
 python-multipart
 slowapi
+redis
 zxcvbn
 email-validator

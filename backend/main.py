@@ -9,8 +9,7 @@ from fastapi import FastAPI, Depends, Query, HTTPException, Request, BackgroundT
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -23,7 +22,7 @@ from auth import get_current_user
 from auth_routes import router as auth_router
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address)
+from rate_limit import limiter
 
 app = FastAPI()
 app.state.limiter = limiter

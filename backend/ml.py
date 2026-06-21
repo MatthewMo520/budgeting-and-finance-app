@@ -109,12 +109,27 @@ def run_ml_pipeline(db: Session, user_id):
     for t, model_pred in zip(txns, predicted):
         t.ml_category = rule_category(t.name) or t.category or model_pred
 
-    # Anomaly detection on this user's amounts only
-    amounts = np.array([t.amount for t in txns]).reshape(-1, 1)
+    # Anomaly detection — fit per user on multiple features so a charge is
+    # judged relative to that user's own patterns, not just raw size:
+    #   1. absolute amount
+    #   2. amount relative to the average for its category (so a big-but-normal
+    #      category like Rent isn't always flagged, but an unusually large
+    #      Dining charge is)
+    #   3. day of month (catches off-cycle timing)
+    abs_amounts = np.array([abs(t.amount) for t in txns], dtype=float)
+    cats = [t.ml_category or "UNKNOWN" for t in txns]
+    cat_means = {}
+    for c in set(cats):
+        vals = abs_amounts[[i for i, cc in enumerate(cats) if cc == c]]
+        cat_means[c] = vals.mean() if len(vals) and vals.mean() > 0 else 1.0
+    rel_amounts = np.array([abs_amounts[i] / cat_means[cats[i]] for i in range(len(txns))])
+    days = np.array([t.date.day for t in txns], dtype=float)
+
+    features = np.column_stack([abs_amounts, rel_amounts, days])
     iso = IsolationForest(contamination=0.15, random_state=42)
-    iso.fit(amounts)
-    scores = iso.decision_function(amounts)
-    preds = iso.predict(amounts)
+    iso.fit(features)
+    scores = iso.decision_function(features)
+    preds = iso.predict(features)
     for t, score, pred in zip(txns, scores, preds):
         t.anomaly_score = float(score)
         t.is_anomaly = bool(pred == -1)
