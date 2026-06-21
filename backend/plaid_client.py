@@ -6,12 +6,16 @@ from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUse
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
 from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
 from datetime import date, timedelta
 
 PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")
+# Absolute https URL Plaid POSTs transaction-update webhooks to (e.g.
+# https://<backend>/plaid/webhook). If unset, Link tokens omit the webhook.
+PLAID_WEBHOOK_URL = os.getenv("PLAID_WEBHOOK_URL")
 _env_map = {
     "sandbox": "https://sandbox.plaid.com",
     "development": "https://development.plaid.com",
@@ -53,21 +57,31 @@ def env_for_user(user) -> str:
 
 def create_link_token(user_id: str, environment: str = PLAID_ENV) -> str:
     """Create a Plaid Link token to initialize the Link widget on the frontend."""
-    request = LinkTokenCreateRequest(
+    kwargs = dict(
         user=LinkTokenCreateRequestUser(client_user_id=user_id),
         client_name="Finance App",
         products=[Products("transactions")],
         country_codes=[CountryCode("US"), CountryCode("CA")],
         language="en",
     )
-    response = _client_for(environment).link_token_create(request)
+    if PLAID_WEBHOOK_URL:
+        kwargs["webhook"] = PLAID_WEBHOOK_URL
+    response = _client_for(environment).link_token_create(LinkTokenCreateRequest(**kwargs))
     return response.link_token
 
 
-def exchange_public_token(public_token: str, environment: str = PLAID_ENV) -> str:
+def exchange_public_token(public_token: str, environment: str = PLAID_ENV):
+    """Exchange a public token → (access_token, item_id)."""
     request = ItemPublicTokenExchangeRequest(public_token=public_token)
     response = _client_for(environment).item_public_token_exchange(request)
-    return response.access_token
+    return response.access_token, response.item_id
+
+
+def get_item_id(access_token: str, environment: str = PLAID_ENV) -> str:
+    """Look up the Plaid item_id for an existing access token (used to migrate
+    legacy single-token users into linked_accounts)."""
+    response = _client_for(environment).item_get(ItemGetRequest(access_token=access_token))
+    return response.item.item_id
 
 
 def get_transactions(access_token: str, start_date: date, end_date: date, environment: str = PLAID_ENV) -> list:

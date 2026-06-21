@@ -14,10 +14,11 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import engine, Base, get_db
-from models import User, Transaction
+from database import engine, Base, get_db, SessionLocal
+from models import User, Transaction, LinkedAccount
 import plaid_client as pc
 from ml import run_ml_pipeline, run_ml_for_user
+from webhook_verify import verify_webhook
 from auth import get_current_user
 from auth_routes import router as auth_router
 
@@ -91,6 +92,30 @@ def _run_startup_migrations():
 
 _run_startup_migrations()
 
+
+def _migrate_legacy_plaid_tokens():
+    """Move any existing single `users.plaid_access_token` into linked_accounts
+    so already-linked users keep working after the multi-account change."""
+    db = SessionLocal()
+    try:
+        users = db.query(User).filter(User.plaid_access_token.isnot(None)).all()
+        for u in users:
+            if db.query(LinkedAccount).filter(LinkedAccount.user_id == u.id).first():
+                continue
+            try:
+                env = pc.env_for_user(u)
+                item_id = pc.get_item_id(u.plaid_access_token, env)
+                db.add(LinkedAccount(user_id=u.id, access_token=u.plaid_access_token, item_id=item_id))
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                print(f"Legacy Plaid token migration skipped for {u.email}: {e}")
+    finally:
+        db.close()
+
+
+_migrate_legacy_plaid_tokens()
+
 # Auto-provision the shared demo account when its credentials are configured
 # (idempotent — safe to run on every startup). Requires the is_demo column.
 if os.getenv("DEMO_EMAIL") and os.getenv("DEMO_PASSWORD"):
@@ -131,8 +156,8 @@ def exchange_token(
     current_user: User = Depends(get_current_user),
 ):
     environment = pc.env_for_user(current_user)
-    access_token = pc.exchange_public_token(body.public_token, environment)
-    current_user.plaid_access_token = access_token
+    access_token, item_id = pc.exchange_public_token(body.public_token, environment)
+    _save_linked_account(db, current_user.id, access_token, item_id)
     db.commit()
 
     end = date.today()
@@ -140,7 +165,7 @@ def exchange_token(
     transactions = _get_transactions_or_none(access_token, start, end, environment)
     if transactions is None:
         # Production: Plaid is still pulling history. The bank is linked; the
-        # user can Sync in a minute once transactions are ready.
+        # webhook (or a manual Sync) will load transactions once they're ready.
         return {"transactions_synced": 0, "pending": True,
                 "message": "Bank linked! Your transactions are still being prepared — check back in a minute and hit Sync."}
     added = _upsert_transactions(db, current_user.id, transactions)
@@ -158,19 +183,53 @@ def sync_transactions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not current_user.plaid_access_token:
+    accounts = db.query(LinkedAccount).filter(LinkedAccount.user_id == current_user.id).all()
+    if not accounts:
         raise HTTPException(status_code=400, detail="No bank account linked.")
 
+    environment = pc.env_for_user(current_user)
     end = date.today()
     start = end - timedelta(days=30)
-    transactions = _get_transactions_or_none(current_user.plaid_access_token, start, end, pc.env_for_user(current_user))
-    if transactions is None:
+    total_added = 0
+    pending = False
+    for acct in accounts:
+        transactions = _get_transactions_or_none(acct.access_token, start, end, environment)
+        if transactions is None:
+            pending = True
+            continue
+        total_added += _upsert_transactions(db, current_user.id, transactions)
+
+    if total_added > 0:
+        background_tasks.add_task(run_ml_for_user, current_user.id)
+    if total_added == 0 and pending:
         return {"transactions_synced": 0, "pending": True,
                 "message": "Your transactions are still being prepared by your bank — try again in a minute."}
-    added = _upsert_transactions(db, current_user.id, transactions)
-    if added > 0:
-        background_tasks.add_task(run_ml_for_user, current_user.id)
-    return {"transactions_synced": added, "message": f"Synced {added} new transactions"}
+    return {"transactions_synced": total_added, "message": f"Synced {total_added} new transactions"}
+
+
+# ── Plaid webhook (auto-sync when transactions are ready) ─────────────────────
+
+@app.post("/plaid/webhook")
+async def plaid_webhook(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    body_bytes = await request.body()
+    payload = json.loads(body_bytes or b"{}")
+    item_id = payload.get("item_id")
+
+    acct = db.query(LinkedAccount).filter(LinkedAccount.item_id == item_id).first() if item_id else None
+    if not acct:
+        return {"status": "ignored"}  # unknown item — nothing to do
+
+    user = db.query(User).filter(User.id == acct.user_id).first()
+    environment = pc.env_for_user(user) if user else pc.PLAID_ENV
+    if not verify_webhook(request.headers.get("plaid-verification"), body_bytes, environment):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    # Transaction updates → sync that item in the background, then run ML.
+    if payload.get("webhook_type") == "TRANSACTIONS" and payload.get("webhook_code") in (
+        "INITIAL_UPDATE", "HISTORICAL_UPDATE", "DEFAULT_UPDATE", "SYNC_UPDATES_AVAILABLE",
+    ):
+        background_tasks.add_task(_sync_account_async, str(acct.id))
+    return {"status": "ok"}
 
 
 # ── Sandbox setup (dev only) ──────────────────────────────────────────────────
@@ -187,8 +246,8 @@ def setup_sandbox(
         raise HTTPException(status_code=403, detail="Sandbox setup is disabled in production.")
 
     public_token = pc.create_sandbox_token()
-    access_token = pc.exchange_public_token(public_token)
-    current_user.plaid_access_token = access_token
+    access_token, item_id = pc.exchange_public_token(public_token)
+    _save_linked_account(db, current_user.id, access_token, item_id)
     db.commit()
 
     time.sleep(10)
@@ -256,6 +315,40 @@ def get_available_months(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _save_linked_account(db: Session, user_id, access_token, item_id, institution_name=None):
+    """Insert or update a LinkedAccount, deduping by Plaid item_id."""
+    acct = db.query(LinkedAccount).filter(LinkedAccount.item_id == item_id).first()
+    if acct:
+        acct.access_token = access_token
+        acct.user_id = user_id
+        if institution_name:
+            acct.institution_name = institution_name
+    else:
+        db.add(LinkedAccount(user_id=user_id, access_token=access_token,
+                             item_id=item_id, institution_name=institution_name))
+
+
+def _sync_account_async(account_id: str):
+    """Background sync for one linked account (used by the Plaid webhook)."""
+    db = SessionLocal()
+    try:
+        acct = db.query(LinkedAccount).filter(LinkedAccount.id == account_id).first()
+        if not acct:
+            return
+        user = db.query(User).filter(User.id == acct.user_id).first()
+        environment = pc.env_for_user(user) if user else pc.PLAID_ENV
+        end = date.today()
+        start = end - timedelta(days=365)
+        transactions = _get_transactions_or_none(acct.access_token, start, end, environment)
+        if not transactions:
+            return
+        added = _upsert_transactions(db, acct.user_id, transactions)
+        if added > 0:
+            run_ml_pipeline(db, acct.user_id)
+    finally:
+        db.close()
+
 
 def _get_transactions_or_none(access_token, start, end, environment):
     """Fetch transactions, returning None if Plaid hasn't finished preparing them

@@ -413,7 +413,9 @@ def update_profile(
 # ── Me ────────────────────────────────────────────────────────────────────────
 
 @router.get("/me")
-def me(current_user: User = Depends(get_current_user)):
+def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from models import LinkedAccount
+    has_bank = db.query(LinkedAccount).filter(LinkedAccount.user_id == current_user.id).first() is not None
     return {
         "id": str(current_user.id),
         "email": current_user.email,
@@ -421,5 +423,5 @@ def me(current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "profile_picture": current_user.profile_picture,
         "is_demo": current_user.is_demo,
-        "has_bank": bool(current_user.plaid_access_token),
+        "has_bank": has_bank,
     }

@@ -17,6 +17,7 @@ Try it without creating an account or linking a real bank:
 ## What it does
 
 - Links real bank accounts through Plaid (production), with a sandbox-routed demo account
+- Supports **multiple linked banks** per user; new transactions **auto-sync** via Plaid webhooks
 - Pulls 12 months of transaction history and categorizes each transaction
 - Flags anomalies per user using Isolation Forest (~15% contamination)
 - Month-by-month spending breakdown with animated charts
@@ -69,6 +70,7 @@ PLAID_CLIENT_ID=
 PLAID_SECRET=                # secret for PLAID_ENV (per-environment)
 PLAID_ENV=sandbox           # sandbox | production
 PLAID_SANDBOX_SECRET=       # only in prod, so the demo account can use sandbox
+PLAID_WEBHOOK_URL=          # https://<backend>/plaid/webhook — enables transaction auto-sync
 PLAID_TOKEN_ENC_KEY=        # Fernet key: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 DATABASE_URL=postgresql://financeuser:financepass@db:5432/financedb
 JWT_SECRET_KEY=             # openssl rand -hex 32 (required — app won't start without it)

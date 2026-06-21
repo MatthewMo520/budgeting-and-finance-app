@@ -27,6 +27,18 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class LinkedAccount(Base):
+    """One linked Plaid Item (bank connection). A user can have several."""
+    __tablename__ = "linked_accounts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    access_token = Column(EncryptedString, nullable=False)
+    item_id = Column(String, unique=True, nullable=False, index=True)  # maps Plaid webhooks → account
+    institution_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
