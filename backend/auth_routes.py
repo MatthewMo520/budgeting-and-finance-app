@@ -3,7 +3,7 @@ import base64
 import pyotp
 import qrcode
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
 from slowapi import Limiter
@@ -16,6 +16,7 @@ from auth import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, create_totp_challenge_token,
     generate_verification_token, get_current_user,
+    set_refresh_cookie, clear_refresh_cookie,
 )
 from database import get_db
 from email_utils import send_verification_email, send_password_reset_email
@@ -23,6 +24,9 @@ from models import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 limiter = Limiter(key_func=get_remote_address)
+
+# Valid bcrypt hash used to equalize login timing when the email doesn't exist.
+_DUMMY_HASH = "$2b$12$tXLlfUbtlsQZHT6jlHiQ/.r0Q0H0n1rxv5WXxoD4uoEX5FmTQWfiq"
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -106,11 +110,11 @@ def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depen
 
 @router.post("/login")
 @limiter.limit("10/minute")
-def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, body: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
-    # Always run verify_password even if user not found to prevent timing attacks
-    dummy_hash = "$2b$12$placeholder.hash.to.prevent.timing.attacks.aaaaaaaaaaaa"
-    password_ok = verify_password(body.password, user.hashed_password if user else dummy_hash)
+    # Always run verify_password even if user not found to prevent timing attacks.
+    # Must be a *valid* bcrypt hash or verify_password raises on the no-user path.
+    password_ok = verify_password(body.password, user.hashed_password if user else _DUMMY_HASH)
 
     if not user or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -124,11 +128,11 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
             "challenge_token": create_totp_challenge_token(str(user.id)),
         }
 
+    set_refresh_cookie(response, create_refresh_token(str(user.id), user.token_version))
     return {
         "totp_required": False,
         "totp_enabled": user.totp_enabled,
         "access_token": create_access_token(str(user.id), user.token_version),
-        "refresh_token": create_refresh_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
 
@@ -137,7 +141,7 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/verify-totp-login")
 @limiter.limit("10/minute")
-def verify_totp_login(request: Request, body: TOTPVerifyRequest, db: Session = Depends(get_db)):
+def verify_totp_login(request: Request, body: TOTPVerifyRequest, response: Response, db: Session = Depends(get_db)):
     credentials_exception = HTTPException(status_code=401, detail="Invalid challenge token")
     try:
         payload = jwt.decode(body.challenge_token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -155,9 +159,9 @@ def verify_totp_login(request: Request, body: TOTPVerifyRequest, db: Session = D
     if not totp.verify(body.code, valid_window=1):
         raise HTTPException(status_code=401, detail="Invalid authenticator code")
 
+    set_refresh_cookie(response, create_refresh_token(str(user.id), user.token_version))
     return {
         "access_token": create_access_token(str(user.id), user.token_version),
-        "refresh_token": create_refresh_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
 
@@ -166,10 +170,17 @@ def verify_totp_login(request: Request, body: TOTPVerifyRequest, db: Session = D
 
 @router.post("/refresh")
 @limiter.limit("30/minute")
-def refresh_token(request: Request, body: RefreshRequest, db: Session = Depends(get_db)):
+def refresh_token(
+    request: Request,
+    response: Response,
+    refresh_token: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+):
     credentials_exception = HTTPException(status_code=401, detail="Invalid refresh token")
+    if not refresh_token:
+        raise credentials_exception
     try:
-        payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
             raise credentials_exception
         user_id = payload.get("sub")
@@ -302,6 +313,7 @@ class ChangePasswordRequest(BaseModel):
 def change_password(
     request: Request,
     body: ChangePasswordRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -315,12 +327,21 @@ def change_password(
     current_user.token_version += 1  # revoke all other sessions
     db.commit()
     # Re-issue tokens for the current device so this session stays logged in.
+    set_refresh_cookie(response, create_refresh_token(str(current_user.id), current_user.token_version))
     return {
         "message": "Password updated successfully.",
         "access_token": create_access_token(str(current_user.id), current_user.token_version),
-        "refresh_token": create_refresh_token(str(current_user.id), current_user.token_version),
         "token_type": "bearer",
     }
+
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+
+@router.post("/logout")
+def logout(response: Response):
+    """Clear the refresh-token cookie. (Access token is in-memory and expires on its own.)"""
+    clear_refresh_cookie(response)
+    return {"message": "Logged out."}
 
 
 # ── Delete account ─────────────────────────────────────────────────────────────

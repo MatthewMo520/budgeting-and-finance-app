@@ -87,7 +87,7 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(data.detail || "Failed to change password")
       // Backend rotates token_version and returns fresh tokens — adopt them so
       // this session stays logged in while other sessions are revoked.
-      if (data.access_token) saveTokens(data.access_token, data.refresh_token)
+      if (data.access_token) saveTokens(data.access_token)
       setPwStatus({ success: "Password updated. Other devices have been signed out." })
       setPwForm({ current: "", next: "", confirm: "" })
     } catch (err) {

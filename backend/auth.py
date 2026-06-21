@@ -22,6 +22,39 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+# ── Refresh-token cookie config ───────────────────────────────────────────────
+# The refresh token lives in an httpOnly cookie (never readable by JS) so an XSS
+# can't steal long-lived credentials. Flags are env-driven so local dev (http,
+# same-origin via Vite proxy) and prod (https, cross-site) can both work:
+#   local:  COOKIE_SECURE=false COOKIE_SAMESITE=lax
+#   prod:   COOKIE_SECURE=true  COOKIE_SAMESITE=none   (cross-site needs none+secure)
+REFRESH_COOKIE_NAME = "refresh_token"
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax").lower()
+
+
+def set_refresh_cookie(response, token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/",
+    )
+
+
+def clear_refresh_cookie(response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/",
+    )
+
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer()
 

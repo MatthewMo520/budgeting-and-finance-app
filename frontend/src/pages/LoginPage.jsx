@@ -23,6 +23,7 @@ export default function LoginPage() {
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       })
@@ -32,7 +33,7 @@ export default function LoginPage() {
         setChallengeToken(data.challenge_token)
         setTotpRequired(true)
       } else {
-        saveTokens(data.access_token, data.refresh_token)
+        await saveTokens(data.access_token)
         navigate(data.totp_enabled ? "/" : "/setup-2fa")
       }
     } catch (err) {
@@ -49,12 +50,13 @@ export default function LoginPage() {
     try {
       const res = await fetch(`${apiBase}/auth/verify-totp-login`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_token: challengeToken, code: totpCode }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || "Invalid code")
-      saveTokens(data.access_token, data.refresh_token)
+      await saveTokens(data.access_token)
       navigate("/")
     } catch (err) {
       setError(err.message)
