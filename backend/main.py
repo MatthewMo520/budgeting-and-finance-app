@@ -73,6 +73,24 @@ def plaid_exception_handler(request: Request, exc: plaid.ApiException):
 
 Base.metadata.create_all(bind=engine)
 
+# Lightweight idempotent migrations — create_all can't ADD columns to existing
+# tables, so apply them here (Postgres "IF NOT EXISTS" makes this safe to re-run).
+def _run_startup_migrations():
+    from sqlalchemy import text
+    statements = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false",
+    ]
+    try:
+        with engine.begin() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
+    except Exception as e:
+        print(f"Startup migration warning: {e}")
+
+
+_run_startup_migrations()
+
 # Auto-provision the shared demo account when its credentials are configured
 # (idempotent — safe to run on every startup). Requires the is_demo column.
 if os.getenv("DEMO_EMAIL") and os.getenv("DEMO_PASSWORD"):
