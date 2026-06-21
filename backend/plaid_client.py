@@ -17,20 +17,41 @@ _env_map = {
     "development": "https://development.plaid.com",
     "production": "https://production.plaid.com",
 }
-
-configuration = plaid.Configuration(
-    host=_env_map.get(PLAID_ENV, "https://sandbox.plaid.com"),
-    api_key={
-        "clientId": os.getenv("PLAID_CLIENT_ID"),
-        "secret": os.getenv("PLAID_SECRET"),
-    },
-)
-
-api_client = plaid.ApiClient(configuration)
-client = plaid_api.PlaidApi(api_client)
+_CLIENT_ID = os.getenv("PLAID_CLIENT_ID")
 
 
-def create_link_token(user_id: str) -> str:
+def _secret_for(environment: str) -> str:
+    """The default env uses PLAID_SECRET. To let a demo account run in sandbox
+    while the app runs in production, set PLAID_SANDBOX_SECRET as well."""
+    if environment == PLAID_ENV:
+        return os.getenv("PLAID_SECRET")
+    if environment == "sandbox":
+        return os.getenv("PLAID_SANDBOX_SECRET") or os.getenv("PLAID_SECRET")
+    return os.getenv("PLAID_SECRET")
+
+
+_clients = {}
+
+
+def _client_for(environment: str):
+    """Lazily build + cache a Plaid client per environment."""
+    if environment not in _clients:
+        cfg = plaid.Configuration(
+            host=_env_map.get(environment, _env_map["sandbox"]),
+            api_key={"clientId": _CLIENT_ID, "secret": _secret_for(environment)},
+        )
+        _clients[environment] = plaid_api.PlaidApi(plaid.ApiClient(cfg))
+    return _clients[environment]
+
+
+def env_for_user(user) -> str:
+    """Demo accounts always use Plaid sandbox; everyone else uses PLAID_ENV."""
+    if getattr(user, "is_demo", False):
+        return "sandbox"
+    return PLAID_ENV
+
+
+def create_link_token(user_id: str, environment: str = PLAID_ENV) -> str:
     """Create a Plaid Link token to initialize the Link widget on the frontend."""
     request = LinkTokenCreateRequest(
         user=LinkTokenCreateRequestUser(client_user_id=user_id),
@@ -39,20 +60,21 @@ def create_link_token(user_id: str) -> str:
         country_codes=[CountryCode("US"), CountryCode("CA")],
         language="en",
     )
-    response = client.link_token_create(request)
+    response = _client_for(environment).link_token_create(request)
     return response.link_token
 
 
-def exchange_public_token(public_token: str) -> str:
+def exchange_public_token(public_token: str, environment: str = PLAID_ENV) -> str:
     request = ItemPublicTokenExchangeRequest(public_token=public_token)
-    response = client.item_public_token_exchange(request)
+    response = _client_for(environment).item_public_token_exchange(request)
     return response.access_token
 
 
-def get_transactions(access_token: str, start_date: date, end_date: date) -> list:
+def get_transactions(access_token: str, start_date: date, end_date: date, environment: str = PLAID_ENV) -> list:
     """Fetch all transactions in [start_date, end_date], handling Plaid's 500-item pagination."""
     all_transactions = []
     offset = 0
+    client = _client_for(environment)
 
     while True:
         request = TransactionsGetRequest(
@@ -79,5 +101,5 @@ def create_sandbox_token() -> str:
         institution_id="ins_109508",
         initial_products=[Products("transactions")],
     )
-    response = client.sandbox_public_token_create(request)
+    response = _client_for("sandbox").sandbox_public_token_create(request)
     return response.public_token

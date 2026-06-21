@@ -34,7 +34,7 @@ function PrivateRoute({ children, require2FA = true }) {
   const { accessToken, user, loading } = useAuth()
   if (loading) return <Spinner />
   if (!accessToken) return <Navigate to="/login" replace />
-  if (require2FA && user && !user.totp_enabled) return <Navigate to="/setup-2fa" replace />
+  if (require2FA && user && !user.totp_enabled && !user.is_demo) return <Navigate to="/setup-2fa" replace />
   return children
 }
 

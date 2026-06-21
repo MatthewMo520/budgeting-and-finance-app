@@ -72,6 +72,16 @@ def plaid_exception_handler(request: Request, exc: plaid.ApiException):
 
 
 Base.metadata.create_all(bind=engine)
+
+# Auto-provision the shared demo account when its credentials are configured
+# (idempotent — safe to run on every startup). Requires the is_demo column.
+if os.getenv("DEMO_EMAIL") and os.getenv("DEMO_PASSWORD"):
+    try:
+        from create_demo_user import main as _ensure_demo_account
+        _ensure_demo_account()
+    except Exception as e:
+        print(f"Demo account setup skipped: {e}")
+
 app.include_router(auth_router)
 
 
@@ -85,7 +95,7 @@ def root():
 @app.post("/plaid/create-link-token")
 @limiter.limit("20/minute")
 def create_link_token(request: Request, current_user: User = Depends(get_current_user)):
-    link_token = pc.create_link_token(str(current_user.id))
+    link_token = pc.create_link_token(str(current_user.id), pc.env_for_user(current_user))
     return {"link_token": link_token}
 
 
@@ -102,13 +112,14 @@ def exchange_token(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    access_token = pc.exchange_public_token(body.public_token)
+    environment = pc.env_for_user(current_user)
+    access_token = pc.exchange_public_token(body.public_token, environment)
     current_user.plaid_access_token = access_token
     db.commit()
 
     end = date.today()
     start = end - timedelta(days=365)
-    transactions = pc.get_transactions(access_token, start, end)
+    transactions = pc.get_transactions(access_token, start, end, environment)
     added = _upsert_transactions(db, current_user.id, transactions)
     background_tasks.add_task(run_ml_for_user, current_user.id)
     return {"transactions_synced": added}
@@ -129,7 +140,7 @@ def sync_transactions(
 
     end = date.today()
     start = end - timedelta(days=30)
-    transactions = pc.get_transactions(current_user.plaid_access_token, start, end)
+    transactions = pc.get_transactions(current_user.plaid_access_token, start, end, pc.env_for_user(current_user))
     added = _upsert_transactions(db, current_user.id, transactions)
     if added > 0:
         background_tasks.add_task(run_ml_for_user, current_user.id)

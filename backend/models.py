@@ -22,6 +22,8 @@ class User(Base):
     profile_picture = Column(String, nullable=True)
     # Bumped to invalidate all of a user's existing JWTs (password change/reset).
     token_version = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    # Shared demo account: exempt from mandatory 2FA, routed to Plaid sandbox.
+    is_demo = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

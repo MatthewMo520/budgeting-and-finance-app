@@ -132,6 +132,7 @@ def login(request: Request, body: LoginRequest, response: Response, db: Session 
     return {
         "totp_required": False,
         "totp_enabled": user.totp_enabled,
+        "is_demo": user.is_demo,
         "access_token": create_access_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
@@ -317,6 +318,8 @@ def change_password(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.is_demo:
+        raise HTTPException(status_code=403, detail="Not allowed for the demo account.")
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     strength = zxcvbn(body.new_password, user_inputs=[current_user.email])
@@ -357,6 +360,8 @@ def delete_account(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.is_demo:
+        raise HTTPException(status_code=403, detail="Not allowed for the demo account.")
     # Re-authenticate before an irreversible, destructive action.
     if not verify_password(body.password, current_user.hashed_password):
         raise HTTPException(status_code=401, detail="Password is incorrect")
@@ -407,4 +412,5 @@ def me(current_user: User = Depends(get_current_user)):
         "totp_enabled": current_user.totp_enabled,
         "username": current_user.username,
         "profile_picture": current_user.profile_picture,
+        "is_demo": current_user.is_demo,
     }

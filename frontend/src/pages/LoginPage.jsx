@@ -34,7 +34,7 @@ export default function LoginPage() {
         setTotpRequired(true)
       } else {
         await saveTokens(data.access_token)
-        navigate(data.totp_enabled ? "/" : "/setup-2fa")
+        navigate(data.totp_enabled || data.is_demo ? "/" : "/setup-2fa")
       }
     } catch (err) {
       setError(err.message)
