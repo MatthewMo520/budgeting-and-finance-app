@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../AuthContext"
 
@@ -71,6 +71,27 @@ export default function SettingsPage() {
   const [disablePassword, setDisablePassword] = useState("")
   const [disableLoading, setDisableLoading] = useState(false)
   const [disableStatus, setDisableStatus] = useState(null)
+
+  const [accounts, setAccounts] = useState([])
+  const [removingId, setRemovingId] = useState(null)
+
+  async function loadAccounts() {
+    try {
+      const res = await apiFetch("/plaid/accounts")
+      if (res.ok) setAccounts(await res.json())
+    } catch { /* ignore */ }
+  }
+  useEffect(() => { loadAccounts() }, [])
+
+  async function handleRemoveAccount(id) {
+    setRemovingId(id)
+    try {
+      const res = await apiFetch(`/plaid/accounts/${id}`, { method: "DELETE" })
+      if (res.ok) { await loadAccounts(); await refreshUser() }
+    } finally {
+      setRemovingId(null)
+    }
+  }
 
   async function handleChangePassword(e) {
     e.preventDefault()
@@ -254,6 +275,30 @@ export default function SettingsPage() {
               >
                 Set up 2FA
               </button>
+            </div>
+          )}
+        </Section>
+
+        <Section title="Linked banks">
+          {accounts.length === 0 ? (
+            <p style={{ fontSize: 14, color: "var(--text2)" }}>No banks connected yet. Use “+ Connect bank” on the dashboard.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {accounts.map(a => (
+                <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{a.institution_name}</div>
+                    {a.linked_at && <div style={{ fontSize: 12, color: "var(--text2)" }}>Linked {a.linked_at.slice(0, 10)}</div>}
+                  </div>
+                  <button
+                    onClick={() => handleRemoveAccount(a.id)}
+                    disabled={removingId === a.id}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 13, fontWeight: 600 }}
+                  >
+                    {removingId === a.id ? "Removing…" : "Disconnect"}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </Section>

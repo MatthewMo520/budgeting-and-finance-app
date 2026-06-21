@@ -78,6 +78,56 @@ def get_categorizer():
     return _categorizer
 
 
+def _normalize_merchant(name: str) -> str:
+    """Loose key for grouping the same merchant across months."""
+    import re
+    s = re.sub(r"[^a-z ]", " ", (name or "").lower())
+    return " ".join(s.split()[:3])
+
+
+def detect_recurring(txns):
+    """Heuristic recurring-charge detection: group spend by merchant, then flag
+    groups with a regular cadence (weekly/biweekly/monthly) and stable amount."""
+    import statistics
+    from collections import defaultdict
+
+    groups = defaultdict(list)
+    for t in txns:
+        if (t.amount or 0) <= 0:  # outflows only
+            continue
+        groups[_normalize_merchant(t.name)].append(t)
+
+    results = []
+    for items in groups.values():
+        if len(items) < 3:
+            continue
+        items.sort(key=lambda x: x.date)
+        gaps = [(items[i + 1].date - items[i].date).days for i in range(len(items) - 1)]
+        gaps = [g for g in gaps if g > 0]
+        if len(gaps) < 2:
+            continue
+        avg_gap = statistics.mean(gaps)
+        gap_std = statistics.pstdev(gaps)
+        amounts = [i.amount for i in items]
+        amt_mean = statistics.mean(amounts)
+        amt_cv = (statistics.pstdev(amounts) / amt_mean) if amt_mean else 1
+
+        # Regular cadence (~weekly to ~monthly) and stable amount.
+        if 5 <= avg_gap <= 40 and gap_std <= 8 and amt_cv <= 0.20:
+            freq = "weekly" if avg_gap < 11 else ("biweekly" if avg_gap < 20 else "monthly")
+            results.append({
+                "name": items[-1].name,
+                "amount": round(amt_mean, 2),
+                "frequency": freq,
+                "occurrences": len(items),
+                "last_date": items[-1].date.date().isoformat(),
+                "category": items[-1].ml_category,
+                "estimated_monthly": round(amt_mean * (30.0 / avg_gap), 2),
+            })
+    results.sort(key=lambda r: -r["estimated_monthly"])
+    return results
+
+
 def run_ml_for_user(user_id):
     """Background-task entry point: opens its own DB session and runs the
     pipeline. Used so ML doesn't block the HTTP response (the request-scoped
@@ -102,12 +152,23 @@ def run_ml_pipeline(db: Session, user_id):
     if not txns:
         return {"categorized": 0, "anomalies": 0}
 
-    # Categorize via a precedence chain: high-precision keyword rules first,
-    # then Plaid's own category (accurate for real merchants), then the
-    # char-n-gram ML model as a final fallback for anything still uncategorized.
+    # Per-user feedback: learn from this user's manual corrections so future
+    # transactions with the same merchant name get the corrected category.
+    corrections = {
+        (t.name or "").strip().lower(): t.ml_category
+        for t in txns
+        if getattr(t, "category_overridden", False) and t.ml_category
+    }
+
+    # Categorize via a precedence chain: manual corrections → keyword rules →
+    # Plaid's own category → char-n-gram ML model. User-overridden rows are
+    # left untouched.
     predicted = categorizer.predict([str(t.name) for t in txns])
     for t, model_pred in zip(txns, predicted):
-        t.ml_category = rule_category(t.name) or t.category or model_pred
+        if getattr(t, "category_overridden", False):
+            continue
+        learned = corrections.get((t.name or "").strip().lower())
+        t.ml_category = learned or rule_category(t.name) or t.category or model_pred
 
     # Anomaly detection — fit per user on multiple features so a charge is
     # judged relative to that user's own patterns, not just raw size:

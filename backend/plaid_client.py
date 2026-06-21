@@ -7,6 +7,8 @@ from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_remove_request import ItemRemoveRequest
+from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
 from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
@@ -82,6 +84,32 @@ def get_item_id(access_token: str, environment: str = PLAID_ENV) -> str:
     legacy single-token users into linked_accounts)."""
     response = _client_for(environment).item_get(ItemGetRequest(access_token=access_token))
     return response.item.item_id
+
+
+def get_institution_name(access_token: str, environment: str = PLAID_ENV):
+    """Best-effort friendly bank name for a linked item (None if unavailable)."""
+    try:
+        item = _client_for(environment).item_get(ItemGetRequest(access_token=access_token))
+        inst_id = item.item.institution_id
+        if not inst_id:
+            return None
+        resp = _client_for(environment).institutions_get_by_id(
+            InstitutionsGetByIdRequest(
+                institution_id=inst_id,
+                country_codes=[CountryCode("US"), CountryCode("CA")],
+            )
+        )
+        return resp.institution.name
+    except Exception:
+        return None
+
+
+def remove_item(access_token: str, environment: str = PLAID_ENV) -> None:
+    """Revoke a linked item at Plaid (stops billing + access). Best-effort."""
+    try:
+        _client_for(environment).item_remove(ItemRemoveRequest(access_token=access_token))
+    except Exception as e:
+        print(f"Plaid item_remove failed (continuing): {e}")
 
 
 def get_transactions(access_token: str, start_date: date, end_date: date, environment: str = PLAID_ENV) -> list:

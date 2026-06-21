@@ -4,6 +4,8 @@ import { useAuth } from "./AuthContext"
 import { displayCat } from "./categories.jsx"
 import MetricCards from "./components/MetricCards"
 import TransactionList from "./components/TransactionList"
+import Budgets from "./components/Budgets"
+import Recurring from "./components/Recurring"
 import SpendingChart from "./components/SpendingChart"
 import AnomalyAlert from "./components/AnomalyAlert"
 import PlaidLinkButton from "./components/PlaidLinkButton"
@@ -206,6 +208,17 @@ function Dashboard() {
     setSelectedMonth(m)
   }
 
+  async function handleEditCategory(txnId, displayName) {
+    try {
+      const res = await apiFetch(`/transactions/${txnId}/category`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: displayName }),
+      })
+      if (res.ok) loadTransactions(selectedMonth)
+    } catch { /* ignore */ }
+  }
+
   const anomalies = transactions.filter(t => t.is_anomaly)
   // Plaid: positive amount = money out (spend). Only outflows count toward spending.
   const totalSpend = transactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
@@ -294,7 +307,9 @@ function Dashboard() {
                 topCategory={topCategory}
               />
               <SpendingChart categoryTotals={categoryTotals} totalSpend={totalSpend} />
-              <TransactionList transactions={transactions} />
+              <Budgets categoryTotals={categoryTotals} />
+              <Recurring />
+              <TransactionList transactions={transactions} onEditCategory={handleEditCategory} />
             </>
           )}
         </div>

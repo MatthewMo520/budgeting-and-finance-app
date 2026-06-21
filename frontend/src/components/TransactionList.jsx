@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { displayCat, catStyle, ICONS } from "../categories.jsx"
+import { displayCat, catStyle, ICONS, EDITABLE_CATEGORIES } from "../categories.jsx"
 
 const fmt = (n) => "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -13,9 +13,10 @@ function CatIcon({ mlCategory }) {
   )
 }
 
-export default function TransactionList({ transactions }) {
+export default function TransactionList({ transactions, onEditCategory }) {
   const [filter, setFilter] = useState("all")
   const [showAll, setShowAll] = useState(false)
+  const [editingId, setEditingId] = useState(null)
 
   useEffect(() => { setFilter("all"); setShowAll(false) }, [transactions])
 
@@ -43,7 +44,27 @@ export default function TransactionList({ transactions }) {
             <CatIcon mlCategory={t.ml_category} />
             <div className="txinfo">
               <div className="txname">{t.name}</div>
-              <div className="txmeta">{displayCat(t.ml_category)} · auto-categorized</div>
+              <div className="txmeta">
+                {editingId === t.id ? (
+                  <select
+                    autoFocus
+                    defaultValue={displayCat(t.ml_category)}
+                    onChange={e => { onEditCategory?.(t.id, e.target.value); setEditingId(null) }}
+                    onBlur={() => setEditingId(null)}
+                    style={{ fontSize: 12, padding: "2px 4px", borderRadius: 6, border: "1px solid var(--border)" }}
+                  >
+                    {EDITABLE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                ) : (
+                  <button
+                    onClick={() => onEditCategory && setEditingId(t.id)}
+                    title="Click to change category"
+                    style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: onEditCategory ? "pointer" : "default" }}
+                  >
+                    {displayCat(t.ml_category)} · {t.category_overridden ? "edited ✎" : "auto-categorized"}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="txright">
               {/* Plaid: positive = money out (spend), negative = money in (income/refund). */}

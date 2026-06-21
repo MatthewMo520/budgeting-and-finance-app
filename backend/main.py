@@ -15,9 +15,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import engine, Base, get_db, SessionLocal
-from models import User, Transaction, LinkedAccount
+from models import User, Transaction, LinkedAccount, Budget
 import plaid_client as pc
-from ml import run_ml_pipeline, run_ml_for_user
+from ml import run_ml_pipeline, run_ml_for_user, detect_recurring
 from webhook_verify import verify_webhook
 from auth import get_current_user
 from auth_routes import router as auth_router
@@ -81,6 +81,7 @@ def _run_startup_migrations():
     statements = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_overridden BOOLEAN NOT NULL DEFAULT false",
     ]
     try:
         with engine.begin() as conn:
@@ -157,7 +158,8 @@ def exchange_token(
 ):
     environment = pc.env_for_user(current_user)
     access_token, item_id = pc.exchange_public_token(body.public_token, environment)
-    _save_linked_account(db, current_user.id, access_token, item_id)
+    institution = pc.get_institution_name(access_token, environment)
+    _save_linked_account(db, current_user.id, access_token, item_id, institution)
     db.commit()
 
     end = date.today()
@@ -205,6 +207,52 @@ def sync_transactions(
         return {"transactions_synced": 0, "pending": True,
                 "message": "Your transactions are still being prepared by your bank — try again in a minute."}
     return {"transactions_synced": total_added, "message": f"Synced {total_added} new transactions"}
+
+
+# ── Manage linked accounts ────────────────────────────────────────────────────
+
+@app.get("/plaid/accounts")
+@limiter.limit("60/minute")
+def list_linked_accounts(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    accounts = (
+        db.query(LinkedAccount)
+        .filter(LinkedAccount.user_id == current_user.id)
+        .order_by(LinkedAccount.created_at.asc())
+        .all()
+    )
+    return [
+        {
+            "id": str(a.id),
+            "institution_name": a.institution_name or "Linked bank",
+            "linked_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in accounts
+    ]
+
+
+@app.delete("/plaid/accounts/{account_id}")
+@limiter.limit("10/minute")
+def remove_linked_account(
+    request: Request,
+    account_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    acct = (
+        db.query(LinkedAccount)
+        .filter(LinkedAccount.id == account_id, LinkedAccount.user_id == current_user.id)
+        .first()
+    )
+    if not acct:
+        raise HTTPException(status_code=404, detail="Account not found")
+    pc.remove_item(acct.access_token, pc.env_for_user(current_user))
+    db.delete(acct)
+    db.commit()
+    return {"message": "Bank disconnected."}
 
 
 # ── Plaid webhook (auto-sync when transactions are ready) ─────────────────────
@@ -295,6 +343,90 @@ def get_transactions_endpoint(
 
     txns = query.order_by(Transaction.date.desc()).all()
     return [_serialize(t) for t in txns]
+
+
+# Display category name → canonical Plaid-style label stored in ml_category.
+_DISPLAY_TO_LABEL = {
+    "Dining": "FOOD_AND_DRINK", "Groceries": "GROCERIES", "Transport": "TRANSPORTATION",
+    "Shopping": "GENERAL_MERCHANDISE", "Utilities": "RENT_AND_UTILITIES",
+    "Entertainment": "ENTERTAINMENT", "Health": "MEDICAL", "Travel": "TRAVEL",
+    "Income": "INCOME", "Transfer": "TRANSFER_OUT", "Other": "OTHER",
+}
+
+
+class CategoryUpdate(BaseModel):
+    category: str  # a display name from _DISPLAY_TO_LABEL
+
+
+@app.patch("/transactions/{txn_id}/category")
+@limiter.limit("60/minute")
+def update_transaction_category(
+    request: Request,
+    txn_id: str,
+    body: CategoryUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    label = _DISPLAY_TO_LABEL.get(body.category)
+    if not label:
+        raise HTTPException(status_code=422, detail="Unknown category")
+    txn = db.query(Transaction).filter(
+        Transaction.id == txn_id, Transaction.user_id == current_user.id
+    ).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    # Apply to all of the user's same-named transactions for consistency, and
+    # mark them overridden so ML keeps the choice (and learns from it).
+    db.query(Transaction).filter(
+        Transaction.user_id == current_user.id, Transaction.name == txn.name
+    ).update({Transaction.ml_category: label, Transaction.category_overridden: True})
+    db.commit()
+    return {"message": "Category updated", "ml_category": label}
+
+
+@app.get("/transactions/recurring")
+@limiter.limit("30/minute")
+def get_recurring(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    txns = db.query(Transaction).filter(Transaction.user_id == current_user.id).all()
+    return detect_recurring(txns)
+
+
+# ── Budgets ───────────────────────────────────────────────────────────────────
+
+class BudgetIn(BaseModel):
+    category: str
+    monthly_limit: float
+
+
+@app.get("/budgets")
+@limiter.limit("60/minute")
+def list_budgets(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    rows = db.query(Budget).filter(Budget.user_id == current_user.id).all()
+    return [{"category": b.category, "monthly_limit": b.monthly_limit} for b in rows]
+
+
+@app.put("/budgets")
+@limiter.limit("30/minute")
+def set_budget(request: Request, body: BudgetIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if body.category not in _DISPLAY_TO_LABEL:
+        raise HTTPException(status_code=422, detail="Unknown category")
+    if body.monthly_limit <= 0:
+        raise HTTPException(status_code=422, detail="Limit must be positive")
+    b = db.query(Budget).filter(Budget.user_id == current_user.id, Budget.category == body.category).first()
+    if b:
+        b.monthly_limit = body.monthly_limit
+    else:
+        db.add(Budget(user_id=current_user.id, category=body.category, monthly_limit=body.monthly_limit))
+    db.commit()
+    return {"category": body.category, "monthly_limit": body.monthly_limit}
+
+
+@app.delete("/budgets/{category}")
+@limiter.limit("30/minute")
+def delete_budget(request: Request, category: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db.query(Budget).filter(Budget.user_id == current_user.id, Budget.category == category).delete()
+    db.commit()
+    return {"message": "Budget removed"}
 
 
 @app.get("/transactions/months")
@@ -398,6 +530,7 @@ def _serialize(t: Transaction) -> dict:
         "date": t.date.isoformat(),
         "category": t.category,
         "ml_category": t.ml_category,
+        "category_overridden": t.category_overridden,
         "is_anomaly": t.is_anomaly,
         "anomaly_score": t.anomaly_score,
     }

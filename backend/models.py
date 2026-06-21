@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey, Integer, text
+from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey, Integer, text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from database import Base
 from crypto import EncryptedString
@@ -39,6 +39,18 @@ class LinkedAccount(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Budget(Base):
+    """A monthly spending limit for one display category, per user."""
+    __tablename__ = "budgets"
+    __table_args__ = (UniqueConstraint("user_id", "category", name="uq_budget_user_category"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category = Column(String, nullable=False)  # display name e.g. "Dining"
+    monthly_limit = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -50,5 +62,8 @@ class Transaction(Base):
     date = Column(DateTime, nullable=False)
     category = Column(String, nullable=True)
     ml_category = Column(String, nullable=True)
+    # True when the user manually set the category — ML won't overwrite it, and
+    # it's used as per-user training feedback for same-named transactions.
+    category_overridden = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_anomaly = Column(Boolean, default=False)
     anomaly_score = Column(Float, nullable=True)

@@ -31,6 +31,12 @@ export const CAT = {
   Other:         { color: "#9ca3af", bg: "#f9fafb" },
 }
 
+// Categories a user can pick when correcting a transaction (display names).
+export const EDITABLE_CATEGORIES = [
+  "Dining", "Groceries", "Transport", "Shopping", "Utilities",
+  "Entertainment", "Health", "Travel", "Income", "Transfer", "Other",
+]
+
 export function displayCat(mlCategory) {
   if (!mlCategory) return "Other"
   const mapped = PLAID_TO_DISPLAY[mlCategory.toUpperCase()]

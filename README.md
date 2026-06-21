@@ -17,9 +17,10 @@ Try it without creating an account or linking a real bank:
 ## What it does
 
 - Links real bank accounts through Plaid (production), with a sandbox-routed demo account
-- Supports **multiple linked banks** per user; new transactions **auto-sync** via Plaid webhooks
-- Pulls 12 months of transaction history and categorizes each transaction
+- Supports **multiple linked banks** per user (connect/disconnect); new transactions **auto-sync** via Plaid webhooks
+- Pulls 12 months of transaction history and categorizes each transaction — with **manual category override** that the model learns from
 - Flags anomalies per user using Isolation Forest (~15% contamination)
+- **Budgets** (monthly limit per category, progress bars) and **recurring/subscription detection**
 - Month-by-month spending breakdown with animated charts
 - JWT auth with email verification and mandatory TOTP 2FA
 
@@ -84,6 +85,16 @@ REDIS_URL=                  # rate-limit store (optional locally; set in prod)
 DEMO_EMAIL=                 # optional — shared demo account (auto-provisioned on startup)
 DEMO_PASSWORD=
 ```
+
+## Tests
+
+Backend unit tests (categorization rules, recurring detection, auth helpers):
+
+```bash
+cd backend && JWT_SECRET_KEY=test pytest -q tests/
+```
+
+CI (GitHub Actions) runs the backend tests + a frontend build on every push/PR.
 
 ## Sandbox testing
 
