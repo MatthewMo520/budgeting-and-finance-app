@@ -137,7 +137,12 @@ def exchange_token(
 
     end = date.today()
     start = end - timedelta(days=365)
-    transactions = pc.get_transactions(access_token, start, end, environment)
+    transactions = _get_transactions_or_none(access_token, start, end, environment)
+    if transactions is None:
+        # Production: Plaid is still pulling history. The bank is linked; the
+        # user can Sync in a minute once transactions are ready.
+        return {"transactions_synced": 0, "pending": True,
+                "message": "Bank linked! Your transactions are still being prepared — check back in a minute and hit Sync."}
     added = _upsert_transactions(db, current_user.id, transactions)
     background_tasks.add_task(run_ml_for_user, current_user.id)
     return {"transactions_synced": added}
@@ -158,7 +163,10 @@ def sync_transactions(
 
     end = date.today()
     start = end - timedelta(days=30)
-    transactions = pc.get_transactions(current_user.plaid_access_token, start, end, pc.env_for_user(current_user))
+    transactions = _get_transactions_or_none(current_user.plaid_access_token, start, end, pc.env_for_user(current_user))
+    if transactions is None:
+        return {"transactions_synced": 0, "pending": True,
+                "message": "Your transactions are still being prepared by your bank — try again in a minute."}
     added = _upsert_transactions(db, current_user.id, transactions)
     if added > 0:
         background_tasks.add_task(run_ml_for_user, current_user.id)
@@ -248,6 +256,21 @@ def get_available_months(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _get_transactions_or_none(access_token, start, end, environment):
+    """Fetch transactions, returning None if Plaid hasn't finished preparing them
+    yet (PRODUCT_NOT_READY) — common in production right after linking."""
+    try:
+        return pc.get_transactions(access_token, start, end, environment)
+    except plaid.ApiException as e:
+        try:
+            code = json.loads(e.body).get("error_code")
+        except (ValueError, TypeError):
+            code = None
+        if code == "PRODUCT_NOT_READY":
+            return None
+        raise
+
 
 def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
     # Fetch existing ids once and dedupe in memory instead of one query per txn.

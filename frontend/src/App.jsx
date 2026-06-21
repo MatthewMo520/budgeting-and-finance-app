@@ -81,7 +81,7 @@ function Header({ user, months, selectedMonth, onMonth, onLogout, onSetup2FA, on
       </div>
 
       <div className="hdr-right">
-        {months.length > 0 && (
+        {(months.length > 0 || user?.has_bank) && (
           <button className="hdr-connect" onClick={onSync} disabled={syncing}>
             {syncing ? "Syncing…" : "↻ Sync"}
           </button>
@@ -236,11 +236,27 @@ function Dashboard() {
         <div className="dash">
           <div className="empty-state">
             <div className="empty-icon">🏦</div>
-            <h2 className="empty-h">Connect your bank</h2>
-            <p className="empty-sub">
-              Link your bank account to start tracking transactions, spotting anomalies, and understanding your spending.
-            </p>
-            <PlaidLinkButton onSuccess={handleBankLinked} className="btn-primary" label="Connect bank account" style={{ width: "auto", display: "inline-block", padding: "11px 28px" }} />
+            {user?.has_bank ? (
+              <>
+                <h2 className="empty-h">Preparing your transactions…</h2>
+                <p className="empty-sub">
+                  Your bank is connected. Banks can take a minute or two to make your transaction history available — hit Sync to check.
+                </p>
+                <button className="btn-primary" onClick={handleSync} disabled={syncing} style={{ width: "auto", display: "inline-block", padding: "11px 28px" }}>
+                  {syncing ? "Syncing…" : "↻ Sync now"}
+                </button>
+                {synced?.error && <p style={{ color: "#dc2626", marginTop: 14, fontSize: 14 }}>{synced.error}</p>}
+                {synced && !synced.error && synced.count === 0 && <p style={{ color: "var(--text2)", marginTop: 14, fontSize: 14 }}>Still preparing — try again in a moment.</p>}
+              </>
+            ) : (
+              <>
+                <h2 className="empty-h">Connect your bank</h2>
+                <p className="empty-sub">
+                  Link your bank account to start tracking transactions, spotting anomalies, and understanding your spending.
+                </p>
+                <PlaidLinkButton onSuccess={handleBankLinked} className="btn-primary" label="Connect bank account" style={{ width: "auto", display: "inline-block", padding: "11px 28px" }} />
+              </>
+            )}
           </div>
         </div>
       ) : (

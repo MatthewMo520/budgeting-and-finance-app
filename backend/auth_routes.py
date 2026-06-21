@@ -421,4 +421,5 @@ def me(current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "profile_picture": current_user.profile_picture,
         "is_demo": current_user.is_demo,
+        "has_bank": bool(current_user.plaid_access_token),
     }

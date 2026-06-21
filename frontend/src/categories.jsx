@@ -16,6 +16,8 @@ export const PLAID_TO_DISPLAY = {
   GOVERNMENT_AND_NON_PROFIT: "Other",
   HOME_IMPROVEMENT: "Shopping",
   TRAVEL: "Transport",
+  OTHER: "Other",
+  BANK_FEES: "Other",
 }
 
 export const CAT = {
@@ -31,7 +33,10 @@ export const CAT = {
 
 export function displayCat(mlCategory) {
   if (!mlCategory) return "Other"
-  return PLAID_TO_DISPLAY[mlCategory] || mlCategory.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+  const mapped = PLAID_TO_DISPLAY[mlCategory.toUpperCase()]
+  if (mapped) return mapped
+  // Unknown label: render it Title Cased (lowercase first so ALL-CAPS isn't kept).
+  return mlCategory.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
 }
 
 export function catStyle(mlCategory) {
