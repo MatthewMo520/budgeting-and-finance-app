@@ -46,7 +46,10 @@ export default function TransactionList({ transactions }) {
               <div className="txmeta">{displayCat(t.ml_category)} · auto-categorized</div>
             </div>
             <div className="txright">
-              <div className="txamt">-{fmt(t.amount)}</div>
+              {/* Plaid: positive = money out (spend), negative = money in (income/refund). */}
+              <div className="txamt" style={t.amount < 0 ? { color: "#166534" } : undefined}>
+                {t.amount < 0 ? "+" : "-"}{fmt(t.amount)}
+              </div>
               <div className="txdate">{t.date?.slice(0, 10)}</div>
               <div>
                 {t.is_anomaly

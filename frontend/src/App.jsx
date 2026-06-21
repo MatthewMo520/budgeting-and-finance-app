@@ -207,12 +207,14 @@ function Dashboard() {
   }
 
   const anomalies = transactions.filter(t => t.is_anomaly)
-  const totalSpend = transactions.reduce((s, t) => s + Math.abs(t.amount), 0)
-  const prevSpend = prevTransactions.reduce((s, t) => s + Math.abs(t.amount), 0)
+  // Plaid: positive amount = money out (spend). Only outflows count toward spending.
+  const totalSpend = transactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
+  const prevSpend = prevTransactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
 
   const categoryTotals = transactions.reduce((acc, t) => {
+    if (t.amount <= 0) return acc  // skip income / transfers-in
     const cat = displayCat(t.ml_category)
-    acc[cat] = (acc[cat] || 0) + Math.abs(t.amount)
+    acc[cat] = (acc[cat] || 0) + t.amount
     return acc
   }, {})
   const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0]
