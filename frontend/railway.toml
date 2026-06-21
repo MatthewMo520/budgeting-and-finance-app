@@ -1,5 +1,7 @@
 [build]
-builder = "nixpacks"
+builder = "dockerfile"
 
-[build.env]
+# VITE_API_URL is passed to the Dockerfile as a build arg (declared via ARG).
+# Set it as a service variable in Railway → it must point to the backend's public URL.
+[build.args]
 VITE_API_URL = "$VITE_API_URL"
