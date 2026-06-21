@@ -21,7 +21,7 @@ function Field({ label, children }) {
 }
 
 export default function SettingsPage() {
-  const { user, apiFetch, refreshUser, logout } = useAuth()
+  const { user, apiFetch, refreshUser, logout, saveTokens } = useAuth()
   const navigate = useNavigate()
 
   const [profileForm, setProfileForm] = useState({ username: user?.username || "" })
@@ -64,9 +64,11 @@ export default function SettingsPage() {
   const [pwLoading, setPwLoading] = useState(false)
 
   const [deleteConfirm, setDeleteConfirm] = useState("")
+  const [deletePassword, setDeletePassword] = useState("")
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleteStatus, setDeleteStatus] = useState(null)
 
+  const [disablePassword, setDisablePassword] = useState("")
   const [disableLoading, setDisableLoading] = useState(false)
   const [disableStatus, setDisableStatus] = useState(null)
 
@@ -83,7 +85,10 @@ export default function SettingsPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || "Failed to change password")
-      setPwStatus({ success: "Password updated successfully." })
+      // Backend rotates token_version and returns fresh tokens — adopt them so
+      // this session stays logged in while other sessions are revoked.
+      if (data.access_token) saveTokens(data.access_token, data.refresh_token)
+      setPwStatus({ success: "Password updated. Other devices have been signed out." })
       setPwForm({ current: "", next: "", confirm: "" })
     } catch (err) {
       setPwStatus({ error: err.message })
@@ -92,12 +97,19 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleDisable2FA() {
+  async function handleDisable2FA(e) {
+    e.preventDefault()
     setDisableLoading(true)
     setDisableStatus(null)
     try {
-      const res = await apiFetch("/auth/disable-totp", { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to disable 2FA")
+      const res = await apiFetch("/auth/disable-totp", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: disablePassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Failed to disable 2FA")
+      setDisablePassword("")
       await refreshUser()
       setDisableStatus({ success: "2FA disabled. You will be asked to set it up again on next login." })
     } catch (err) {
@@ -113,8 +125,15 @@ export default function SettingsPage() {
     setDeleteLoading(true)
     setDeleteStatus(null)
     try {
-      const res = await apiFetch("/auth/delete-account", { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete account")
+      const res = await apiFetch("/auth/delete-account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || "Failed to delete account")
+      }
       logout()
     } catch (err) {
       setDeleteStatus({ error: err.message })
@@ -211,13 +230,18 @@ export default function SettingsPage() {
               <p style={{ fontSize: 14, color: "var(--text2)", marginBottom: 16 }}>
                 2FA is currently enabled. Disabling it will require you to set it up again on your next login.
               </p>
-              <button
-                onClick={handleDisable2FA}
-                disabled={disableLoading}
-                style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 14, fontWeight: 600 }}
-              >
-                {disableLoading ? "Disabling…" : "Disable 2FA"}
-              </button>
+              <form onSubmit={handleDisable2FA}>
+                <Field label="Confirm your password to disable 2FA">
+                  <input type="password" value={disablePassword} onChange={e => setDisablePassword(e.target.value)} placeholder="••••••••" required />
+                </Field>
+                <button
+                  type="submit"
+                  disabled={disableLoading || !disablePassword}
+                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 14, fontWeight: 600, opacity: !disablePassword ? 0.5 : 1 }}
+                >
+                  {disableLoading ? "Disabling…" : "Disable 2FA"}
+                </button>
+              </form>
             </div>
           ) : (
             <div>
@@ -249,9 +273,18 @@ export default function SettingsPage() {
                 required
               />
             </Field>
+            <Field label="Confirm your password">
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={e => setDeletePassword(e.target.value)}
+                placeholder="••••••••"
+                required
+              />
+            </Field>
             <button
               type="submit"
-              disabled={deleteLoading || deleteConfirm !== user?.email}
+              disabled={deleteLoading || deleteConfirm !== user?.email || !deletePassword}
               style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 14, fontWeight: 600, opacity: deleteConfirm !== user?.email ? 0.5 : 1 }}
             >
               {deleteLoading ? "Deleting…" : "Delete account"}

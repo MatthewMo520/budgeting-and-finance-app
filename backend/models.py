@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey, Integer, text
 from sqlalchemy.dialects.postgresql import UUID
 from database import Base
 from crypto import EncryptedString
@@ -20,6 +20,8 @@ class User(Base):
     reset_token_expires = Column(DateTime, nullable=True)
     username = Column(String, nullable=True)
     profile_picture = Column(String, nullable=True)
+    # Bumped to invalidate all of a user's existing JWTs (password change/reset).
+    token_version = Column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

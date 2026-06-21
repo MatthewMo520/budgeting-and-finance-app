@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY or SECRET_KEY == "change-me-in-production":
+    raise RuntimeError(
+        "JWT_SECRET_KEY must be set to a strong secret before the app can start "
+        "(generate one with: openssl rand -hex 32)."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -29,14 +34,14 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, token_version: int = 0) -> str:
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": user_id, "exp": expire, "type": "access"}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode({"sub": user_id, "exp": expire, "type": "access", "tv": token_version}, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    return jwt.encode({"sub": user_id, "exp": expire, "type": "refresh"}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode({"sub": user_id, "exp": expire, "type": "refresh", "tv": token_version}, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def create_totp_challenge_token(user_id: str) -> str:
@@ -70,6 +75,10 @@ def get_current_user(
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
+        raise credentials_exception
+    # Token version check — incrementing user.token_version revokes all prior
+    # tokens (e.g. after a password change).
+    if payload.get("tv") != user.token_version:
         raise credentials_exception
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Email not verified")

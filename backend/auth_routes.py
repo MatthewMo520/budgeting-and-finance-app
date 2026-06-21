@@ -127,8 +127,8 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     return {
         "totp_required": False,
         "totp_enabled": user.totp_enabled,
-        "access_token": create_access_token(str(user.id)),
-        "refresh_token": create_refresh_token(str(user.id)),
+        "access_token": create_access_token(str(user.id), user.token_version),
+        "refresh_token": create_refresh_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
 
@@ -156,8 +156,8 @@ def verify_totp_login(request: Request, body: TOTPVerifyRequest, db: Session = D
         raise HTTPException(status_code=401, detail="Invalid authenticator code")
 
     return {
-        "access_token": create_access_token(str(user.id)),
-        "refresh_token": create_refresh_token(str(user.id)),
+        "access_token": create_access_token(str(user.id), user.token_version),
+        "refresh_token": create_refresh_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
 
@@ -177,11 +177,11 @@ def refresh_token(request: Request, body: RefreshRequest, db: Session = Depends(
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
+    if not user or payload.get("tv") != user.token_version:
         raise credentials_exception
 
     return {
-        "access_token": create_access_token(str(user.id)),
+        "access_token": create_access_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
 
@@ -226,9 +226,20 @@ def confirm_totp(
     return {"message": "Two-factor authentication enabled"}
 
 
+class DisableTOTPRequest(BaseModel):
+    password: str
+
 @router.delete("/disable-totp")
 @limiter.limit("5/minute")
-def disable_totp(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def disable_totp(
+    request: Request,
+    body: DisableTOTPRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Re-authenticate: a stolen access token alone must not be able to weaken 2FA.
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Password is incorrect")
     current_user.totp_enabled = False
     current_user.totp_secret = None
     db.commit()
@@ -275,6 +286,7 @@ def reset_password(request: Request, body: ResetPasswordRequest, db: Session = D
     user.hashed_password = hash_password(body.password)
     user.reset_token = None
     user.reset_token_expires = None
+    user.token_version += 1  # revoke any existing sessions
     db.commit()
     return {"message": "Password updated. You can now log in."}
 
@@ -300,19 +312,33 @@ def change_password(
         suggestion = strength["feedback"]["suggestions"][0] if strength["feedback"]["suggestions"] else "Choose a stronger password."
         raise HTTPException(status_code=422, detail=f"Password too weak. {suggestion}")
     current_user.hashed_password = hash_password(body.new_password)
+    current_user.token_version += 1  # revoke all other sessions
     db.commit()
-    return {"message": "Password updated successfully."}
+    # Re-issue tokens for the current device so this session stays logged in.
+    return {
+        "message": "Password updated successfully.",
+        "access_token": create_access_token(str(current_user.id), current_user.token_version),
+        "refresh_token": create_refresh_token(str(current_user.id), current_user.token_version),
+        "token_type": "bearer",
+    }
 
 
 # ── Delete account ─────────────────────────────────────────────────────────────
+
+class DeleteAccountRequest(BaseModel):
+    password: str
 
 @router.delete("/delete-account")
 @limiter.limit("3/minute")
 def delete_account(
     request: Request,
+    body: DeleteAccountRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # Re-authenticate before an irreversible, destructive action.
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Password is incorrect")
     from models import Transaction
     db.query(Transaction).filter(Transaction.user_id == current_user.id).delete()
     db.delete(current_user)
