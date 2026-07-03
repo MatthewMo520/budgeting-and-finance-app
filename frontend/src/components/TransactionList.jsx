@@ -13,15 +13,20 @@ function CatIcon({ mlCategory }) {
   )
 }
 
-export default function TransactionList({ transactions, onEditCategory }) {
+export default function TransactionList({ transactions, onEditCategory, onExport }) {
   const [filter, setFilter] = useState("all")
   const [showAll, setShowAll] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [query, setQuery] = useState("")
 
-  useEffect(() => { setFilter("all"); setShowAll(false) }, [transactions])
+  useEffect(() => { setFilter("all"); setShowAll(false); setQuery("") }, [transactions])
 
   const anomalyCount = transactions.filter(t => t.is_anomaly).length
-  const filtered = filter === "anomalies" ? transactions.filter(t => t.is_anomaly) : transactions
+  const q = query.trim().toLowerCase()
+  const filtered = transactions.filter(t =>
+    (filter !== "anomalies" || t.is_anomaly) &&
+    (!q || t.name.toLowerCase().includes(q) || displayCat(t.ml_category).toLowerCase().includes(q))
+  )
   const shown = showAll ? filtered : filtered.slice(0, 7)
 
   return (
@@ -29,12 +34,25 @@ export default function TransactionList({ transactions, onEditCategory }) {
       <div className="txcard-hdr">
         <div className="txcard-title">Recent transactions</div>
         <div className="filter-row">
+          <input
+            type="search"
+            className="tx-search"
+            placeholder="Search transactions"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            aria-label="Search transactions by name or category"
+          />
           <button className={`filter-btn ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
             All
           </button>
           <button className={`filter-btn ${filter === "anomalies" ? "active" : ""}`} onClick={() => setFilter("anomalies")}>
             Anomalies {anomalyCount > 0 && `(${anomalyCount})`}
           </button>
+          {onExport && (
+            <button className="filter-btn" onClick={onExport} title="Download this month as CSV">
+              ↓ CSV
+            </button>
+          )}
         </div>
       </div>
 
@@ -82,7 +100,11 @@ export default function TransactionList({ transactions, onEditCategory }) {
         ))}
         {filtered.length === 0 && (
           <div style={{ padding: "32px", textAlign: "center", color: "var(--text2)", fontSize: 14 }}>
-            No transactions found.
+            {q
+              ? `No transactions match “${query.trim()}”.`
+              : filter === "anomalies"
+                ? "No anomalies this month — all clear."
+                : "No transactions found."}
           </div>
         )}
       </div>

@@ -15,10 +15,30 @@ export default function LoginPage() {
   const [totpRequired, setTotpRequired] = useState(false)
   const [challengeToken, setChallengeToken] = useState("")
   const [totpCode, setTotpCode] = useState("")
+  const [needsVerification, setNeedsVerification] = useState(false)
+  const [resendStatus, setResendStatus] = useState("")
+
+  async function handleResendVerification() {
+    setResendStatus("")
+    try {
+      const res = await fetch(`${apiBase}/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Could not resend email")
+      setResendStatus("Verification email sent — check your inbox.")
+    } catch (err) {
+      setResendStatus(err.message)
+    }
+  }
 
   async function handleLogin(e) {
     e.preventDefault()
     setError("")
+    setNeedsVerification(false)
+    setResendStatus("")
     setLoading(true)
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
@@ -28,7 +48,10 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || "Login failed")
+      if (!res.ok) {
+        if (res.status === 403) setNeedsVerification(true)
+        throw new Error(data.detail || "Login failed")
+      }
       if (data.totp_required) {
         setChallengeToken(data.challenge_token)
         setTotpRequired(true)
@@ -104,6 +127,13 @@ export default function LoginPage() {
       <div className="auth-h">Welcome back</div>
       <div className="auth-sub">Sign in to your account</div>
       {error && <div className="auth-error">{error}</div>}
+      {needsVerification && (
+        <div className="auth-switch" style={{ marginBottom: 14 }}>
+          {resendStatus
+            ? <span style={{ fontSize: 13, color: "var(--text2)" }}>{resendStatus}</span>
+            : <a onClick={handleResendVerification}>Resend verification email</a>}
+        </div>
+      )}
       <form onSubmit={handleLogin}>
         <div className="field">
           <label>Email address</label>

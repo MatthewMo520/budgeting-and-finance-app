@@ -1,7 +1,8 @@
 const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export default function MetricCards({ totalSpend, prevSpend, transactionCount, anomalyCount, topCategory }) {
+export default function MetricCards({ totalSpend, prevSpend, transactionCount, prevCount, anomalyCount, topCategory }) {
   const pct = prevSpend > 0 ? ((totalSpend - prevSpend) / prevSpend) * 100 : null
+  const countDiff = prevCount > 0 ? transactionCount - prevCount : null
 
   const cards = [
     {
@@ -14,7 +15,9 @@ export default function MetricCards({ totalSpend, prevSpend, transactionCount, a
     {
       label: "Transactions",
       value: transactionCount,
-      sub: { cls: "muted", text: "Normal range" },
+      sub: countDiff !== null
+        ? { cls: "muted", text: countDiff === 0 ? "Same as last month" : `${countDiff > 0 ? "+" : ""}${countDiff} vs last month` }
+        : { cls: "muted", text: "No previous month data" },
     },
     {
       label: "Anomalies flagged",

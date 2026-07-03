@@ -7,11 +7,11 @@ from typing import Optional
 import plaid
 from fastapi import FastAPI, Depends, Query, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from database import engine, Base, get_db, SessionLocal
@@ -82,6 +82,7 @@ def _run_startup_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_overridden BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token_expires TIMESTAMP",
     ]
     try:
         with engine.begin() as conn:
@@ -322,16 +323,9 @@ def run_ml(
 
 # ── Transactions ──────────────────────────────────────────────────────────────
 
-@app.get("/transactions")
-@limiter.limit("60/minute")
-def get_transactions_endpoint(
-    request: Request,
-    month: Optional[str] = Query(None, description="Filter by month, format YYYY-MM"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
-
+def _transactions_query(db: Session, user_id, month: Optional[str]):
+    """User-scoped transaction query with an optional YYYY-MM month filter."""
+    query = db.query(Transaction).filter(Transaction.user_id == user_id)
     if month:
         try:
             year, mon = map(int, month.split("-"))
@@ -340,9 +334,55 @@ def get_transactions_endpoint(
             query = query.filter(Transaction.date >= start_dt, Transaction.date < end_dt)
         except (ValueError, AttributeError):
             pass
+    return query.order_by(Transaction.date.desc())
 
-    txns = query.order_by(Transaction.date.desc()).all()
+
+@app.get("/transactions")
+@limiter.limit("60/minute")
+def get_transactions_endpoint(
+    request: Request,
+    month: Optional[str] = Query(None, description="Filter by month, format YYYY-MM"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    txns = _transactions_query(db, current_user.id, month).all()
     return [_serialize(t) for t in txns]
+
+
+@app.get("/transactions/export")
+@limiter.limit("10/minute")
+def export_transactions(
+    request: Request,
+    month: Optional[str] = Query(None, description="Filter by month, format YYYY-MM"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the user's transactions as a CSV file."""
+    import csv
+    import io as _io
+
+    def _safe(cell: str) -> str:
+        # Neutralize spreadsheet formula injection (names are bank-supplied).
+        return "'" + cell if cell[:1] in ("=", "+", "-", "@") else cell
+
+    txns = _transactions_query(db, current_user.id, month).all()
+    buf = _io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["date", "name", "amount", "category", "anomaly"])
+    for t in txns:
+        writer.writerow([
+            t.date.date().isoformat(),
+            _safe(t.name or ""),
+            f"{t.amount:.2f}",
+            t.ml_category or t.category or "",
+            "yes" if t.is_anomaly else "no",
+        ])
+    filename = f"transactions-{month}.csv" if month else "transactions-all.csv"
+    return PlainTextResponse(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # Display category name → canonical Plaid-style label stored in ml_category.
@@ -429,6 +469,34 @@ def delete_budget(request: Request, category: str, db: Session = Depends(get_db)
     return {"message": "Budget removed"}
 
 
+@app.get("/transactions/summary")
+@limiter.limit("60/minute")
+def get_monthly_summary(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Per-month totals for the trend chart: spend (outflows), income (inflows), count."""
+    month_col = func.to_char(Transaction.date, "YYYY-MM")
+    rows = (
+        db.query(
+            month_col.label("month"),
+            func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)).label("spend"),
+            func.sum(case((Transaction.amount < 0, -Transaction.amount), else_=0)).label("income"),
+            func.count().label("count"),
+        )
+        .filter(Transaction.user_id == current_user.id)
+        .group_by(month_col)
+        .order_by(month_col.asc())
+        .all()
+    )
+    return [
+        {"month": r.month, "spend": round(float(r.spend or 0), 2),
+         "income": round(float(r.income or 0), 2), "count": r.count}
+        for r in rows
+    ]
+
+
 @app.get("/transactions/months")
 @limiter.limit("60/minute")
 def get_available_months(
@@ -505,6 +573,10 @@ def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
     }
     added = 0
     for t in plaid_txns:
+        # Skip pending transactions: Plaid assigns them a NEW transaction_id when
+        # they post, so storing them now would leave a duplicate row behind.
+        if getattr(t, "pending", False):
+            continue
         if t.transaction_id in existing:
             continue
         existing.add(t.transaction_id)

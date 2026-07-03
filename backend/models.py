@@ -13,6 +13,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_verified = Column(Boolean, default=False)
     verification_token = Column(String, nullable=True)
+    verification_token_expires = Column(DateTime, nullable=True)
     plaid_access_token = Column(EncryptedString, nullable=True)
     totp_secret = Column(EncryptedString, nullable=True)
     totp_enabled = Column(Boolean, default=False)

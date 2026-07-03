@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "./AuthContext"
 import { displayCat } from "./categories.jsx"
 import MetricCards from "./components/MetricCards"
+import TrendChart from "./components/TrendChart"
 import TransactionList from "./components/TransactionList"
 import Budgets from "./components/Budgets"
 import Recurring from "./components/Recurring"
@@ -129,6 +130,7 @@ function Dashboard() {
   const navigate = useNavigate()
 
   const [months, setMonths] = useState([])
+  const [summary, setSummary] = useState([])
   const [selectedMonth, setSelectedMonth] = useState(null)
   const [transactions, setTransactions] = useState([])
   const [prevTransactions, setPrevTransactions] = useState([])
@@ -136,6 +138,13 @@ function Dashboard() {
   const [syncing, setSyncing] = useState(false)
   const [synced, setSynced] = useState(null)
   const [dashKey, setDashKey] = useState(0)
+
+  const loadSummary = useCallback(() => {
+    apiFetch("/transactions/summary")
+      .then(r => r.json())
+      .then(data => setSummary(Array.isArray(data) ? data : []))
+      .catch(() => setSummary([]))
+  }, [apiFetch])
 
   const loadMonths = useCallback(() => {
     apiFetch("/transactions/months")
@@ -171,7 +180,7 @@ function Dashboard() {
       .catch(() => setPrevTransactions([]))
   }, [apiFetch])
 
-  useEffect(() => { loadMonths() }, [loadMonths])
+  useEffect(() => { loadMonths(); loadSummary() }, [loadMonths, loadSummary])
 
   useEffect(() => {
     if (selectedMonth) {
@@ -184,6 +193,7 @@ function Dashboard() {
   function handleBankLinked(count) {
     setSynced({ count })
     loadMonths()
+    loadSummary()
   }
 
   async function handleSync() {
@@ -195,7 +205,7 @@ function Dashboard() {
         setSynced({ error: data.detail || "Sync failed. Please try again." })
       } else {
         setSynced({ count: data.transactions_synced })
-        if (data.transactions_synced > 0) loadMonths()
+        if (data.transactions_synced > 0) { loadMonths(); loadSummary() }
       }
     } catch {
       setSynced({ error: "Sync failed. Please try again." })
@@ -206,6 +216,20 @@ function Dashboard() {
 
   function switchMonth(m) {
     setSelectedMonth(m)
+  }
+
+  async function handleExportCsv() {
+    try {
+      const res = await apiFetch(`/transactions/export?month=${selectedMonth}`)
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `transactions-${selectedMonth}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { /* ignore */ }
   }
 
   async function handleEditCategory(txnId, displayName) {
@@ -303,13 +327,15 @@ function Dashboard() {
                 totalSpend={totalSpend}
                 prevSpend={prevSpend}
                 transactionCount={transactions.length}
+                prevCount={prevTransactions.length}
                 anomalyCount={anomalies.length}
                 topCategory={topCategory}
               />
+              <TrendChart summary={summary} selectedMonth={selectedMonth} onMonth={switchMonth} />
               <SpendingChart categoryTotals={categoryTotals} totalSpend={totalSpend} />
               <Budgets categoryTotals={categoryTotals} />
               <Recurring />
-              <TransactionList transactions={transactions} onEditCategory={handleEditCategory} />
+              <TransactionList transactions={transactions} onEditCategory={handleEditCategory} onExport={handleExportCsv} />
             </>
           )}
         </div>

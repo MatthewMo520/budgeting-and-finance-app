@@ -1,5 +1,7 @@
 import io
 import base64
+from datetime import datetime, timedelta
+
 import pyotp
 import qrcode
 
@@ -48,9 +50,6 @@ class TOTPVerifyRequest(BaseModel):
 class TOTPConfirmRequest(BaseModel):
     code: str
 
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
@@ -81,6 +80,7 @@ def register(request: Request, body: RegisterRequest, db: Session = Depends(get_
         email=body.email,
         hashed_password=hash_password(body.password),
         verification_token=hash_token(raw_token),
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24),
     )
     db.add(user)
     db.commit()
@@ -99,13 +99,44 @@ def register(request: Request, body: RegisterRequest, db: Session = Depends(get_
 @limiter.limit("10/minute")
 def verify_email(request: Request, body: VerifyEmailRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.verification_token == hash_token(body.token)).first()
-    if not user:
+    # Legacy rows have no expiry (NULL) — treat those as non-expiring.
+    if not user or (user.verification_token_expires and user.verification_token_expires < datetime.utcnow()):
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
     user.is_verified = True
     user.verification_token = None
+    user.verification_token_expires = None
     db.commit()
     return {"message": "Email verified. You can now log in."}
+
+
+# ── Resend verification email ─────────────────────────────────────────────────
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/resend-verification")
+@limiter.limit("3/minute")
+def resend_verification(request: Request, body: ResendVerificationRequest, db: Session = Depends(get_db)):
+    # Generic response regardless of whether the email exists or is already
+    # verified, to avoid user enumeration.
+    generic = {"message": "If that email needs verification, a new link has been sent."}
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user or user.is_verified:
+        return generic
+
+    raw_token = generate_verification_token()
+    user.verification_token = hash_token(raw_token)
+    user.verification_token_expires = datetime.utcnow() + timedelta(hours=24)
+    db.commit()
+
+    try:
+        send_verification_email(body.email, raw_token)
+    except Exception:
+        pass
+
+    return generic
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
@@ -205,6 +236,11 @@ def refresh_token(
 @router.post("/setup-totp")
 @limiter.limit("10/minute")
 def setup_totp(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # If 2FA is already on, a bare access token must not be able to rotate the
+    # secret (that would let a stolen token swap in an attacker's authenticator).
+    # Disabling first requires the password.
+    if current_user.totp_enabled:
+        raise HTTPException(status_code=403, detail="Two-factor authentication is already enabled. Disable it first to set up a new authenticator.")
     secret = pyotp.random_base32()
     current_user.totp_secret = secret
     db.commit()
@@ -265,9 +301,9 @@ def disable_totp(
 @router.post("/forgot-password")
 @limiter.limit("3/minute")
 def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    from datetime import datetime, timedelta
     user = db.query(User).filter(User.email == body.email).first()
-    if not user:
+    # Skip the shared demo account — its password must stay fixed.
+    if not user or user.is_demo:
         return {"message": "If that email exists you'll receive a reset link shortly."}
 
     raw_token = generate_verification_token()
@@ -286,15 +322,13 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
 @router.post("/reset-password")
 @limiter.limit("5/minute")
 def reset_password(request: Request, body: ResetPasswordRequest, db: Session = Depends(get_db)):
-    from datetime import datetime
-
     strength = zxcvbn(body.password)
     if strength["score"] < 2:
         suggestion = strength["feedback"]["suggestions"][0] if strength["feedback"]["suggestions"] else "Choose a stronger password."
         raise HTTPException(status_code=422, detail=f"Password too weak. {suggestion}")
 
     user = db.query(User).filter(User.reset_token == hash_token(body.token)).first()
-    if not user or not user.reset_token_expires or user.reset_token_expires < datetime.utcnow():
+    if not user or user.is_demo or not user.reset_token_expires or user.reset_token_expires < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Invalid or expired reset link")
 
     user.hashed_password = hash_password(body.password)
@@ -367,7 +401,15 @@ def delete_account(
     # Re-authenticate before an irreversible, destructive action.
     if not verify_password(body.password, current_user.hashed_password):
         raise HTTPException(status_code=401, detail="Password is incorrect")
-    from models import Transaction
+    from models import Transaction, LinkedAccount
+    import plaid_client as pc
+    # Revoke every linked Item at Plaid — otherwise the bank connection stays
+    # live (and billed) after the local rows are gone. remove_item is best-effort.
+    accounts = db.query(LinkedAccount).filter(LinkedAccount.user_id == current_user.id).all()
+    environment = pc.env_for_user(current_user)
+    for acct in accounts:
+        pc.remove_item(acct.access_token, environment)
+        db.delete(acct)
     db.query(Transaction).filter(Transaction.user_id == current_user.id).delete()
     db.delete(current_user)
     db.commit()

@@ -15,8 +15,13 @@ export default function TOTPSetupPage() {
 
   useEffect(() => {
     apiFetch("/auth/setup-totp", { method: "POST" })
-      .then(r => r.json())
-      .then(data => { setQrCode(data.qr_code); setSecret(data.secret) })
+      .then(async r => {
+        const data = await r.json()
+        if (!r.ok) throw new Error(data.detail || "Could not start 2FA setup")
+        setQrCode(data.qr_code)
+        setSecret(data.secret)
+      })
+      .catch(err => setError(err.message))
   }, [apiFetch])
 
   async function handleConfirm(e) {
