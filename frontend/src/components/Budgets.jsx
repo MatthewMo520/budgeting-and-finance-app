@@ -40,7 +40,7 @@ export default function Budgets({ categoryTotals }) {
     <div className="card" style={{ background: "var(--surface)", borderRadius: "var(--r)", boxShadow: "var(--shadow)", padding: "24px 28px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
         <div style={{ fontSize: 16, fontWeight: 700 }}>Budgets</div>
-        <button onClick={() => setAdding(a => !a)} style={{ fontSize: 13, fontWeight: 600, color: "var(--green-dark)", background: "none", border: "none", cursor: "pointer" }}>
+        <button onClick={() => setAdding(a => !a)} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", background: "none", border: "none", cursor: "pointer" }}>
           {adding ? "Cancel" : "+ Add budget"}
         </button>
       </div>
@@ -67,13 +67,13 @@ export default function Budgets({ categoryTotals }) {
               <div key={b.category}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
                   <span style={{ fontWeight: 600 }}>{b.category}</span>
-                  <span style={{ color: over ? "#dc2626" : "var(--text2)" }}>
+                  <span style={{ color: over ? "var(--red)" : "var(--text2)" }}>
                     {fmt(spent)} / {fmt(b.monthly_limit)}
                     <button onClick={() => remove(b.category)} title="Remove" style={{ marginLeft: 10, background: "none", border: "none", color: "var(--text2)", cursor: "pointer" }}>✕</button>
                   </span>
                 </div>
-                <div style={{ height: 8, borderRadius: 999, background: "#eee" }}>
-                  <div style={{ width: `${pct}%`, height: "100%", borderRadius: 999, background: over ? "#dc2626" : "var(--green-dark, #166534)", transition: "width .4s" }} />
+                <div style={{ height: 8, borderRadius: 999, background: "var(--track)" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", borderRadius: 999, background: over ? "var(--red)" : "var(--bar-active)", transition: "width .4s" }} />
                 </div>
               </div>
             )

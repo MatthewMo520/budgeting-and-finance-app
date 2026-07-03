@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "./AuthContext"
+import { useTheme } from "./theme.jsx"
 import { displayCat } from "./categories.jsx"
 import MetricCards from "./components/MetricCards"
 import TrendChart from "./components/TrendChart"
+import BalancesCard from "./components/BalancesCard"
 import TransactionList from "./components/TransactionList"
 import Budgets from "./components/Budgets"
 import Recurring from "./components/Recurring"
@@ -37,7 +39,7 @@ function PrivateRoute({ children, require2FA = true }) {
   const { accessToken, user, loading } = useAuth()
   if (loading) return <Spinner />
   if (!accessToken) return <Navigate to="/login" replace />
-  if (require2FA && user && !user.totp_enabled && !user.is_demo) return <Navigate to="/setup-2fa" replace />
+  if (require2FA && user && !user.totp_enabled && !user.email_otp_enabled && !user.is_demo) return <Navigate to="/setup-2fa" replace />
   return children
 }
 
@@ -49,9 +51,18 @@ function Spinner() {
   )
 }
 
+const THEME_LABELS = { light: "Light", dark: "Dark", system: "System" }
+const THEME_ORDER = ["light", "dark", "system"]
+
 function Header({ user, months, selectedMonth, onMonth, onLogout, onSetup2FA, onConnectBank, onSync, syncing, onSettings }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
+  const { theme, setTheme } = useTheme()
+
+  function cycleTheme(e) {
+    e.stopPropagation()  // keep the menu open while cycling
+    setTheme(THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length])
+  }
 
   useEffect(() => {
     function handleClick(e) {
@@ -110,7 +121,10 @@ function Header({ user, months, selectedMonth, onMonth, onLogout, onSetup2FA, on
               <button className="hdr-menuitem" onClick={() => { setMenuOpen(false); onSettings() }}>
                 Settings
               </button>
-              {!user?.totp_enabled && (
+              <button className="hdr-menuitem" onClick={cycleTheme}>
+                Theme: {THEME_LABELS[theme]}
+              </button>
+              {!user?.totp_enabled && !user?.email_otp_enabled && (
                 <button className="hdr-menuitem" onClick={() => { setMenuOpen(false); onSetup2FA() }}>
                   Enable 2FA
                 </button>
@@ -126,7 +140,7 @@ function Header({ user, months, selectedMonth, onMonth, onLogout, onSetup2FA, on
 }
 
 function Dashboard() {
-  const { user, logout, apiFetch } = useAuth()
+  const { user, logout, apiFetch, refreshUser } = useAuth()
   const navigate = useNavigate()
 
   const [months, setMonths] = useState([])
@@ -138,6 +152,7 @@ function Dashboard() {
   const [syncing, setSyncing] = useState(false)
   const [synced, setSynced] = useState(null)
   const [dashKey, setDashKey] = useState(0)
+  const [categoryFilter, setCategoryFilter] = useState(null)
 
   const loadSummary = useCallback(() => {
     apiFetch("/transactions/summary")
@@ -194,6 +209,7 @@ function Dashboard() {
     setSynced({ count })
     loadMonths()
     loadSummary()
+    refreshUser()  // picks up has_bank so the balances card appears
   }
 
   async function handleSync() {
@@ -216,6 +232,11 @@ function Dashboard() {
 
   function switchMonth(m) {
     setSelectedMonth(m)
+    setCategoryFilter(null)
+  }
+
+  function toggleCategoryFilter(name) {
+    setCategoryFilter(prev => prev === name ? null : name)
   }
 
   async function handleExportCsv() {
@@ -284,7 +305,7 @@ function Dashboard() {
                 <button className="btn-primary" onClick={handleSync} disabled={syncing} style={{ width: "auto", display: "inline-block", padding: "11px 28px" }}>
                   {syncing ? "Syncing…" : "↻ Sync now"}
                 </button>
-                {synced?.error && <p style={{ color: "#dc2626", marginTop: 14, fontSize: 14 }}>{synced.error}</p>}
+                {synced?.error && <p style={{ color: "var(--red)", marginTop: 14, fontSize: 14 }}>{synced.error}</p>}
                 {synced && !synced.error && synced.count === 0 && <p style={{ color: "var(--text2)", marginTop: 14, fontSize: 14 }}>Still preparing — try again in a moment.</p>}
               </>
             ) : (
@@ -301,7 +322,7 @@ function Dashboard() {
       ) : (
         <div key={dashKey} className="dash fadein">
           {synced !== null && (
-            <div className="sync-banner" style={synced.error ? { background: "#fef2f2", borderColor: "#fecaca", color: "#dc2626" } : undefined}>
+            <div className="sync-banner" style={synced.error ? { background: "var(--red-bg)", borderColor: "var(--red-border)", color: "var(--red)" } : undefined}>
               <span>
                 {synced.error
                   ? `⚠ ${synced.error}`
@@ -323,6 +344,7 @@ function Dashboard() {
           ) : (
             <>
               <AnomalyAlert anomalies={anomalies} allTransactions={transactions} />
+              <BalancesCard />
               <MetricCards
                 totalSpend={totalSpend}
                 prevSpend={prevSpend}
@@ -332,10 +354,21 @@ function Dashboard() {
                 topCategory={topCategory}
               />
               <TrendChart summary={summary} selectedMonth={selectedMonth} onMonth={switchMonth} />
-              <SpendingChart categoryTotals={categoryTotals} totalSpend={totalSpend} />
+              <SpendingChart
+                categoryTotals={categoryTotals}
+                totalSpend={totalSpend}
+                selectedCategory={categoryFilter}
+                onSelectCategory={toggleCategoryFilter}
+              />
               <Budgets categoryTotals={categoryTotals} />
               <Recurring />
-              <TransactionList transactions={transactions} onEditCategory={handleEditCategory} onExport={handleExportCsv} />
+              <TransactionList
+                transactions={transactions}
+                onEditCategory={handleEditCategory}
+                onExport={handleExportCsv}
+                categoryFilter={categoryFilter}
+                onClearCategory={() => setCategoryFilter(null)}
+              />
             </>
           )}
         </div>

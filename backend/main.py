@@ -83,6 +83,10 @@ def _run_startup_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_overridden BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token_expires TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_otp_enabled BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_otp_code VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_otp_expires TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_otp_attempts INTEGER NOT NULL DEFAULT 0",
     ]
     try:
         with engine.begin() as conn:
@@ -208,6 +212,41 @@ def sync_transactions(
         return {"transactions_synced": 0, "pending": True,
                 "message": "Your transactions are still being prepared by your bank — try again in a minute."}
     return {"transactions_synced": total_added, "message": f"Synced {total_added} new transactions"}
+
+
+# ── Account balances ──────────────────────────────────────────────────────────
+
+# Balance calls hit the bank live (slow + billable), so cache per user briefly.
+_balance_cache = {}  # user_id(str) -> (fetched_at, payload)
+_BALANCE_TTL_SECONDS = 300
+
+
+@app.get("/plaid/balances")
+@limiter.limit("10/minute")
+def get_balances_endpoint(
+    request: Request,
+    refresh: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    key = str(current_user.id)
+    now = time.time()
+    cached = _balance_cache.get(key)
+    if cached and not refresh and now - cached[0] < _BALANCE_TTL_SECONDS:
+        return cached[1]
+
+    accounts = db.query(LinkedAccount).filter(LinkedAccount.user_id == current_user.id).all()
+    environment = pc.env_for_user(current_user)
+    result = []
+    for acct in accounts:
+        institution = acct.institution_name or "Linked bank"
+        # One bank failing (e.g. ITEM_LOGIN_REQUIRED) shouldn't take down the rest.
+        try:
+            result.append({"institution": institution, "accounts": pc.get_balances(acct.access_token, environment)})
+        except Exception:
+            result.append({"institution": institution, "accounts": [], "error": True})
+    _balance_cache[key] = (now, result)
+    return result
 
 
 # ── Manage linked accounts ────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import hmac
 import io
 import base64
 from datetime import datetime, timedelta
@@ -15,11 +16,11 @@ from auth import (
     SECRET_KEY, ALGORITHM,
     hash_password, verify_password,
     create_access_token, create_refresh_token, create_totp_challenge_token,
-    generate_verification_token, get_current_user, hash_token,
+    generate_verification_token, generate_otp_code, get_current_user, hash_token,
     set_refresh_cookie, clear_refresh_cookie,
 )
 from database import get_db
-from email_utils import send_verification_email, send_password_reset_email
+from email_utils import send_verification_email, send_password_reset_email, send_otp_email
 from models import User
 
 from rate_limit import limiter
@@ -155,9 +156,11 @@ def login(request: Request, body: LoginRequest, response: Response, db: Session 
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Please verify your email before logging in")
 
-    if user.totp_enabled:
+    if user.totp_enabled or user.email_otp_enabled:
+        methods = [m for m, on in (("totp", user.totp_enabled), ("email", user.email_otp_enabled)) if on]
         return {
             "totp_required": True,
+            "methods": methods,
             "challenge_token": create_totp_challenge_token(str(user.id)),
         }
 
@@ -171,33 +174,98 @@ def login(request: Request, body: LoginRequest, response: Response, db: Session 
     }
 
 
-# ── TOTP login challenge ──────────────────────────────────────────────────────
+# ── 2FA login challenge (TOTP or email code) ─────────────────────────────────
 
-@router.post("/verify-totp-login")
-@limiter.limit("10/minute")
-def verify_totp_login(request: Request, body: TOTPVerifyRequest, response: Response, db: Session = Depends(get_db)):
+def _user_from_challenge(challenge_token: str, db: Session) -> User:
+    """Resolve the user from a 2FA challenge token, or raise 401."""
     credentials_exception = HTTPException(status_code=401, detail="Invalid challenge token")
     try:
-        payload = jwt.decode(body.challenge_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(challenge_token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "totp_challenge":
             raise credentials_exception
         user_id = payload.get("sub")
     except JWTError:
         raise credentials_exception
-
     user = db.query(User).filter(User.id == user_id).first()
-    if not user or not user.totp_secret:
+    if not user:
         raise credentials_exception
+    return user
 
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(body.code, valid_window=1):
-        raise HTTPException(status_code=401, detail="Invalid authenticator code")
 
+def _issue_login_tokens(user: User, response: Response) -> dict:
     set_refresh_cookie(response, create_refresh_token(str(user.id), user.token_version))
     return {
         "access_token": create_access_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
+
+
+@router.post("/verify-totp-login")
+@limiter.limit("10/minute")
+def verify_totp_login(request: Request, body: TOTPVerifyRequest, response: Response, db: Session = Depends(get_db)):
+    user = _user_from_challenge(body.challenge_token, db)
+    if not user.totp_secret:
+        raise HTTPException(status_code=401, detail="Invalid challenge token")
+
+    totp = pyotp.TOTP(user.totp_secret)
+    if not totp.verify(body.code, valid_window=1):
+        raise HTTPException(status_code=401, detail="Invalid authenticator code")
+
+    return _issue_login_tokens(user, response)
+
+
+class SendLoginOTPRequest(BaseModel):
+    challenge_token: str
+
+
+@router.post("/send-login-otp")
+@limiter.limit("3/minute")
+def send_login_otp(request: Request, body: SendLoginOTPRequest, db: Session = Depends(get_db)):
+    user = _user_from_challenge(body.challenge_token, db)
+    if not user.email_otp_enabled:
+        raise HTTPException(status_code=400, detail="Email codes are not enabled for this account")
+
+    code = generate_otp_code()
+    user.email_otp_code = hash_token(code)
+    user.email_otp_expires = datetime.utcnow() + timedelta(minutes=10)
+    user.email_otp_attempts = 0
+    db.commit()
+
+    try:
+        send_otp_email(user.email, code)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Couldn't send the email — try again")
+    return {"message": "Code sent — check your email."}
+
+
+@router.post("/verify-email-otp-login")
+@limiter.limit("10/minute")
+def verify_email_otp_login(request: Request, body: TOTPVerifyRequest, response: Response, db: Session = Depends(get_db)):
+    user = _user_from_challenge(body.challenge_token, db)
+    error = _check_email_otp(user, body.code, db)
+    if error:
+        raise error
+    return _issue_login_tokens(user, response)
+
+
+def _check_email_otp(user: User, code: str, db: Session):
+    """Validate an email OTP for a user. Clears the code on success; increments
+    the attempt counter (max 5) on failure. Returns an HTTPException or None."""
+    if not user.email_otp_code or not user.email_otp_expires:
+        return HTTPException(status_code=400, detail="No code was sent — request one first")
+    if user.email_otp_expires < datetime.utcnow():
+        return HTTPException(status_code=401, detail="That code has expired — request a new one")
+    if user.email_otp_attempts >= 5:
+        return HTTPException(status_code=429, detail="Too many attempts — request a new code")
+    if not hmac.compare_digest(user.email_otp_code, hash_token(code)):
+        user.email_otp_attempts += 1
+        db.commit()
+        return HTTPException(status_code=401, detail="Invalid code — try again")
+    user.email_otp_code = None
+    user.email_otp_expires = None
+    user.email_otp_attempts = 0
+    db.commit()
+    return None
 
 
 # ── Refresh token ─────────────────────────────────────────────────────────────
@@ -294,6 +362,67 @@ def disable_totp(
     current_user.totp_secret = None
     db.commit()
     return {"message": "Two-factor authentication disabled"}
+
+
+# ── Email-code 2FA setup (while logged in) ───────────────────────────────────
+
+@router.post("/setup-email-otp")
+@limiter.limit("3/minute")
+def setup_email_otp(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Send a confirmation code to the account email to enable email-code 2FA."""
+    code = generate_otp_code()
+    current_user.email_otp_code = hash_token(code)
+    current_user.email_otp_expires = datetime.utcnow() + timedelta(minutes=10)
+    current_user.email_otp_attempts = 0
+    db.commit()
+    try:
+        send_otp_email(current_user.email, code)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Couldn't send the email — try again")
+    return {"message": f"Code sent to {current_user.email}."}
+
+
+class ConfirmEmailOTPRequest(BaseModel):
+    code: str
+
+
+@router.post("/confirm-email-otp")
+@limiter.limit("10/minute")
+def confirm_email_otp(
+    request: Request,
+    body: ConfirmEmailOTPRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    error = _check_email_otp(current_user, body.code, db)
+    if error:
+        raise error
+    current_user.email_otp_enabled = True
+    db.commit()
+    return {"message": "Email-code two-factor authentication enabled"}
+
+
+class DisableEmailOTPRequest(BaseModel):
+    password: str
+
+
+@router.delete("/disable-email-otp")
+@limiter.limit("5/minute")
+def disable_email_otp(
+    request: Request,
+    body: DisableEmailOTPRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Re-authenticate: a stolen access token alone must not be able to weaken 2FA.
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Password is incorrect")
+    current_user.email_otp_enabled = False
+    current_user.email_otp_code = None
+    current_user.email_otp_expires = None
+    current_user.email_otp_attempts = 0
+    db.commit()
+    return {"message": "Email-code two-factor authentication disabled"}
 
 
 # ── Forgot / reset password ───────────────────────────────────────────────────
@@ -462,6 +591,7 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         "id": str(current_user.id),
         "email": current_user.email,
         "totp_enabled": current_user.totp_enabled,
+        "email_otp_enabled": current_user.email_otp_enabled,
         "username": current_user.username,
         "profile_picture": current_user.profile_picture,
         "is_demo": current_user.is_demo,

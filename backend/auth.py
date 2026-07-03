@@ -87,6 +87,11 @@ def generate_verification_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def generate_otp_code() -> str:
+    """6-digit numeric code for email 2FA (leading zeros preserved)."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
 def hash_token(token: str) -> str:
     """Deterministic hash for storing email-verification / password-reset tokens
     at rest. These are bearer secrets — a DB leak of raw tokens would allow

@@ -34,6 +34,35 @@ def send_password_reset_email(to_email: str, token: str) -> None:
     client.send(message)
 
 
+def send_otp_email(to_email: str, code: str) -> None:
+    # Dev fallback: without a SendGrid key, print the code so the flow is testable.
+    if not SENDGRID_API_KEY:
+        print(f"[dev] Email OTP for {to_email}: {code}")
+        return
+    message = Mail(
+        from_email=FROM_EMAIL,
+        to_emails=to_email,
+        subject="Your sign-in code — Finance App",
+        html_content=f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+          <h2 style="color:#166534;margin-bottom:8px;">Your sign-in code</h2>
+          <p style="color:#555;margin-bottom:24px;">
+            Enter this code to finish signing in. It expires in 10 minutes.
+          </p>
+          <div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#1a1714;
+                      background:#f0ebe1;border-radius:8px;padding:16px 24px;text-align:center;">
+            {code}
+          </div>
+          <p style="color:#999;font-size:12px;margin-top:24px;">
+            If you didn't try to sign in, change your password immediately.
+          </p>
+        </div>
+        """,
+    )
+    client = SendGridAPIClient(SENDGRID_API_KEY)
+    client.send(message)
+
+
 def send_verification_email(to_email: str, token: str) -> None:
     verify_url = f"{FRONTEND_URL}/verify-email?token={token}"
     message = Mail(

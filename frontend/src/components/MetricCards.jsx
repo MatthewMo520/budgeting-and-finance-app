@@ -22,7 +22,7 @@ export default function MetricCards({ totalSpend, prevSpend, transactionCount, p
     {
       label: "Anomalies flagged",
       value: anomalyCount,
-      valueColor: anomalyCount > 0 ? "#dc2626" : "#16a34a",
+      valueColor: anomalyCount > 0 ? "var(--red)" : "var(--green)",
       sub: anomalyCount > 0
         ? { cls: "amber", text: "Needs review" }
         : { cls: "green", text: "All clear" },

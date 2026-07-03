@@ -20,15 +20,17 @@ export const PLAID_TO_DISPLAY = {
   BANK_FEES: "Other",
 }
 
+// Mark colors validated for colorblind separation on light + dark surfaces
+// (identity is never color-alone: every use pairs the color with a label/icon).
 export const CAT = {
-  Groceries:     { color: "#22c55e", bg: "#dcfce7" },
-  Dining:        { color: "#ef4444", bg: "#fee2e2" },
-  Transport:     { color: "#3b82f6", bg: "#dbeafe" },
-  Shopping:      { color: "#8b5cf6", bg: "#ede9fe" },
-  Utilities:     { color: "#6b7280", bg: "#f3f4f6" },
-  Entertainment: { color: "#f59e0b", bg: "#fef3c7" },
-  Health:        { color: "#10b981", bg: "#d1fae5" },
-  Other:         { color: "#9ca3af", bg: "#f9fafb" },
+  Groceries:     { color: "#22c55e" },
+  Dining:        { color: "#ef4444" },
+  Transport:     { color: "#3b82f6" },
+  Shopping:      { color: "#d946ef" },
+  Utilities:     { color: "#b45309" },
+  Entertainment: { color: "#f59e0b" },
+  Health:        { color: "#10b981" },
+  Other:         { color: "#9ca3af" },
 }
 
 // Categories a user can pick when correcting a transaction (display names).
@@ -47,7 +49,9 @@ export function displayCat(mlCategory) {
 
 export function catStyle(mlCategory) {
   const name = displayCat(mlCategory)
-  return CAT[name] || CAT.Other
+  const { color } = CAT[name] || CAT.Other
+  // Tinted chip background derived from the mark color — adapts to dark mode.
+  return { color, bg: `color-mix(in srgb, ${color} 14%, transparent)` }
 }
 
 // SVG icons per category

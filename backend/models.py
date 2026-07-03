@@ -17,6 +17,11 @@ class User(Base):
     plaid_access_token = Column(EncryptedString, nullable=True)
     totp_secret = Column(EncryptedString, nullable=True)
     totp_enabled = Column(Boolean, default=False)
+    # Email-code 2FA (alternative to TOTP; either — or both — can be enabled).
+    email_otp_enabled = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    email_otp_code = Column(String, nullable=True)  # sha256 hash of the 6-digit code
+    email_otp_expires = Column(DateTime, nullable=True)
+    email_otp_attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
     username = Column(String, nullable=True)

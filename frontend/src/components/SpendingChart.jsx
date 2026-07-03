@@ -11,7 +11,7 @@ function getCatEntries(categoryTotals) {
     .map(([name, val]) => ({ name, val, ...(CAT[name] || CAT.Other) }))
 }
 
-function DonutChart({ categoryTotals, totalSpend }) {
+function DonutChart({ categoryTotals, totalSpend, selectedCategory, onSelectCategory }) {
   const [on, setOn] = useState(false)
   const cats = getCatEntries(categoryTotals)
 
@@ -46,12 +46,15 @@ function DonutChart({ categoryTotals, totalSpend }) {
           <path key={i} d={s.d} fill={s.color} style={{
             transformOrigin: "100px 100px",
             transform: on ? "scale(1)" : "scale(0.82)",
-            opacity: on ? 1 : 0,
+            opacity: !on ? 0 : (selectedCategory && selectedCategory !== s.name ? 0.3 : 1),
             transition: `transform .55s cubic-bezier(.34,1.4,.64,1) ${i * .06}s, opacity .3s ease ${i * .06}s`,
-          }} />
+            cursor: "pointer",
+          }} onClick={() => onSelectCategory?.(s.name)}>
+            <title>{`${s.name} — ${fmt(s.val)} (click to filter transactions)`}</title>
+          </path>
         ))}
-        <text x="100" y="92" textAnchor="middle" fontSize="21" fontWeight="700" fill="#1a1714" fontFamily="DM Sans,system-ui,sans-serif">{fmtK(totalSpend)}</text>
-        <text x="100" y="111" textAnchor="middle" fontSize="11.5" fill="#78716c" fontFamily="DM Sans,system-ui,sans-serif">total</text>
+        <text x="100" y="92" textAnchor="middle" fontSize="21" fontWeight="700" fill="var(--text)" fontFamily="DM Sans,system-ui,sans-serif">{fmtK(totalSpend)}</text>
+        <text x="100" y="111" textAnchor="middle" fontSize="11.5" fill="var(--text2)" fontFamily="DM Sans,system-ui,sans-serif">total</text>
       </svg>
       <div className="donut-legend">
         {segs.map((s, i) => (
@@ -66,7 +69,7 @@ function DonutChart({ categoryTotals, totalSpend }) {
   )
 }
 
-export default function SpendingChart({ categoryTotals, totalSpend }) {
+export default function SpendingChart({ categoryTotals, totalSpend, selectedCategory, onSelectCategory }) {
   const [on, setOn] = useState(false)
   const cats = getCatEntries(categoryTotals)
   const max = cats[0]?.val || 1
@@ -83,7 +86,15 @@ export default function SpendingChart({ categoryTotals, totalSpend }) {
         <div className="chart-title">Spending by category</div>
         <div className="bar-rows">
           {cats.map(({ name, val, color }, i) => (
-            <div key={name} className="bar-row">
+            <div
+              key={name}
+              className={`bar-row clickable ${selectedCategory && selectedCategory !== name ? "dimmed" : ""}`}
+              onClick={() => onSelectCategory?.(name)}
+              title={`Click to ${selectedCategory === name ? "clear the filter" : "filter transactions to " + name}`}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectCategory?.(name) } }}
+            >
               <span className="bar-label">{name}</span>
               <div className="bar-track">
                 <div className="bar-fill" style={{
@@ -99,7 +110,7 @@ export default function SpendingChart({ categoryTotals, totalSpend }) {
       </div>
       <div className="chart-card">
         <div className="chart-title">Category split</div>
-        <DonutChart categoryTotals={categoryTotals} totalSpend={totalSpend} />
+        <DonutChart categoryTotals={categoryTotals} totalSpend={totalSpend} selectedCategory={selectedCategory} onSelectCategory={onSelectCategory} />
       </div>
     </div>
   )

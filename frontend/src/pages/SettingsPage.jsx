@@ -72,6 +72,9 @@ export default function SettingsPage() {
   const [disableLoading, setDisableLoading] = useState(false)
   const [disableStatus, setDisableStatus] = useState(null)
 
+  const [emailOtpPassword, setEmailOtpPassword] = useState("")
+  const [emailOtpLoading, setEmailOtpLoading] = useState(false)
+
   const [accounts, setAccounts] = useState([])
   const [removingId, setRemovingId] = useState(null)
 
@@ -132,11 +135,33 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(data.detail || "Failed to disable 2FA")
       setDisablePassword("")
       await refreshUser()
-      setDisableStatus({ success: "2FA disabled. You will be asked to set it up again on next login." })
+      setDisableStatus({ success: "Authenticator 2FA disabled." })
     } catch (err) {
       setDisableStatus({ error: err.message })
     } finally {
       setDisableLoading(false)
+    }
+  }
+
+  async function handleDisableEmailOtp(e) {
+    e.preventDefault()
+    setEmailOtpLoading(true)
+    setDisableStatus(null)
+    try {
+      const res = await apiFetch("/auth/disable-email-otp", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: emailOtpPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Failed to disable email codes")
+      setEmailOtpPassword("")
+      await refreshUser()
+      setDisableStatus({ success: "Email-code 2FA disabled." })
+    } catch (err) {
+      setDisableStatus({ error: err.message })
+    } finally {
+      setEmailOtpLoading(false)
     }
   }
 
@@ -201,7 +226,7 @@ export default function SettingsPage() {
                   <input type="file" accept="image/*" onChange={handleAvatarChange} style={{ display: "none" }} />
                 </label>
                 {avatarPreview && (
-                  <button type="button" onClick={() => setAvatarPreview(null)} style={{ marginLeft: 10, fontSize: 13, color: "#dc2626", background: "none", border: "none", cursor: "pointer" }}>
+                  <button type="button" onClick={() => setAvatarPreview(null)} style={{ marginLeft: 10, fontSize: 13, color: "var(--red)", background: "none", border: "none", cursor: "pointer" }}>
                     Remove
                   </button>
                 )}
@@ -246,37 +271,70 @@ export default function SettingsPage() {
         <Section title="Two-factor authentication">
           {disableStatus?.error && <div className="auth-error">{disableStatus.error}</div>}
           {disableStatus?.success && <div className="auth-success">{disableStatus.success}</div>}
-          {user?.totp_enabled ? (
-            <div>
-              <p style={{ fontSize: 14, color: "var(--text2)", marginBottom: 16 }}>
-                2FA is currently enabled. Disabling it will require you to set it up again on your next login.
-              </p>
+
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+              Authenticator app {user?.totp_enabled && <span style={{ color: "var(--green)", fontSize: 12, fontWeight: 600 }}>· enabled</span>}
+            </div>
+            {user?.totp_enabled ? (
               <form onSubmit={handleDisable2FA}>
-                <Field label="Confirm your password to disable 2FA">
+                <Field label="Confirm your password to disable authenticator codes">
                   <input type="password" value={disablePassword} onChange={e => setDisablePassword(e.target.value)} placeholder="••••••••" required />
                 </Field>
                 <button
                   type="submit"
                   disabled={disableLoading || !disablePassword}
-                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 14, fontWeight: 600, opacity: !disablePassword ? 0.5 : 1 }}
+                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid var(--red-border)", background: "var(--red-bg)", color: "var(--red)", fontSize: 14, fontWeight: 600, opacity: !disablePassword ? 0.5 : 1 }}
                 >
-                  {disableLoading ? "Disabling…" : "Disable 2FA"}
+                  {disableLoading ? "Disabling…" : "Disable authenticator"}
                 </button>
               </form>
+            ) : (
+              <>
+                <p style={{ fontSize: 14, color: "var(--text2)", marginBottom: 12 }}>
+                  Verify sign-ins with codes from Google Authenticator or Authy.
+                </p>
+                <button
+                  onClick={() => navigate("/setup-2fa")}
+                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid var(--green-border)", background: "var(--green-bg)", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}
+                >
+                  Set up authenticator
+                </button>
+              </>
+            )}
+          </div>
+
+          <div style={{ paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+              Email codes {user?.email_otp_enabled && <span style={{ color: "var(--green)", fontSize: 12, fontWeight: 600 }}>· enabled</span>}
             </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: 14, color: "var(--text2)", marginBottom: 16 }}>
-                2FA is not enabled. Set it up to secure your account.
-              </p>
-              <button
-                onClick={() => navigate("/setup-2fa")}
-                style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #bbf7d0", background: "#f0fdf4", color: "var(--green-dark)", fontSize: 14, fontWeight: 600 }}
-              >
-                Set up 2FA
-              </button>
-            </div>
-          )}
+            {user?.email_otp_enabled ? (
+              <form onSubmit={handleDisableEmailOtp}>
+                <Field label="Confirm your password to disable email codes">
+                  <input type="password" value={emailOtpPassword} onChange={e => setEmailOtpPassword(e.target.value)} placeholder="••••••••" required />
+                </Field>
+                <button
+                  type="submit"
+                  disabled={emailOtpLoading || !emailOtpPassword}
+                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid var(--red-border)", background: "var(--red-bg)", color: "var(--red)", fontSize: 14, fontWeight: 600, opacity: !emailOtpPassword ? 0.5 : 1 }}
+                >
+                  {emailOtpLoading ? "Disabling…" : "Disable email codes"}
+                </button>
+              </form>
+            ) : (
+              <>
+                <p style={{ fontSize: 14, color: "var(--text2)", marginBottom: 12 }}>
+                  Get a 6-digit code sent to {user?.email} each time you sign in.
+                </p>
+                <button
+                  onClick={() => navigate("/setup-2fa")}
+                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid var(--green-border)", background: "var(--green-bg)", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}
+                >
+                  Set up email codes
+                </button>
+              </>
+            )}
+          </div>
         </Section>
 
         <Section title="Linked banks">
@@ -293,7 +351,7 @@ export default function SettingsPage() {
                   <button
                     onClick={() => handleRemoveAccount(a.id)}
                     disabled={removingId === a.id}
-                    style={{ padding: "7px 14px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 13, fontWeight: 600 }}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "1.5px solid var(--red-border)", background: "var(--red-bg)", color: "var(--red)", fontSize: 13, fontWeight: 600 }}
                   >
                     {removingId === a.id ? "Removing…" : "Disconnect"}
                   </button>
@@ -330,7 +388,7 @@ export default function SettingsPage() {
             <button
               type="submit"
               disabled={deleteLoading || deleteConfirm !== user?.email || !deletePassword}
-              style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 14, fontWeight: 600, opacity: deleteConfirm !== user?.email ? 0.5 : 1 }}
+              style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid var(--red-border)", background: "var(--red-bg)", color: "var(--red)", fontSize: 14, fontWeight: 600, opacity: deleteConfirm !== user?.email ? 0.5 : 1 }}
             >
               {deleteLoading ? "Deleting…" : "Delete account"}
             </button>

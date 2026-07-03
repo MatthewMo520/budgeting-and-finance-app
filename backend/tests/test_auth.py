@@ -3,7 +3,7 @@ from jose import jwt
 from auth import (
     ALGORITHM, SECRET_KEY,
     hash_token, hash_password, verify_password,
-    create_access_token, create_refresh_token,
+    create_access_token, create_refresh_token, generate_otp_code,
 )
 
 
@@ -33,3 +33,16 @@ def test_refresh_token_type_and_version():
     claims = jwt.decode(tok, SECRET_KEY, algorithms=[ALGORITHM])
     assert claims["type"] == "refresh"
     assert claims["tv"] == 3
+
+
+def test_otp_code_is_six_digits():
+    for _ in range(50):
+        code = generate_otp_code()
+        assert len(code) == 6
+        assert code.isdigit()  # leading zeros preserved
+
+
+def test_otp_code_hashes_like_other_tokens():
+    code = generate_otp_code()
+    assert hash_token(code) == hash_token(code)
+    assert hash_token(code) != code  # never stored in plaintext

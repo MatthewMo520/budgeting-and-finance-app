@@ -3,6 +3,7 @@ import plaid
 from plaid.api import plaid_api
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
@@ -110,6 +111,24 @@ def remove_item(access_token: str, environment: str = PLAID_ENV) -> None:
         _client_for(environment).item_remove(ItemRemoveRequest(access_token=access_token))
     except Exception as e:
         print(f"Plaid item_remove failed (continuing): {e}")
+
+
+def get_balances(access_token: str, environment: str = PLAID_ENV) -> list:
+    """Live balances for every account under one linked item."""
+    resp = _client_for(environment).accounts_balance_get(
+        AccountsBalanceGetRequest(access_token=access_token)
+    )
+    return [
+        {
+            "name": a.name,
+            "mask": a.mask,
+            "subtype": str(a.subtype) if a.subtype else None,
+            "available": a.balances.available,
+            "current": a.balances.current,
+            "currency": a.balances.iso_currency_code or "USD",
+        }
+        for a in resp.accounts
+    ]
 
 
 def get_transactions(access_token: str, start_date: date, end_date: date, environment: str = PLAID_ENV) -> list:

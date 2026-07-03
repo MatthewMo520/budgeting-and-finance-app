@@ -13,7 +13,7 @@ function CatIcon({ mlCategory }) {
   )
 }
 
-export default function TransactionList({ transactions, onEditCategory, onExport }) {
+export default function TransactionList({ transactions, onEditCategory, onExport, categoryFilter, onClearCategory }) {
   const [filter, setFilter] = useState("all")
   const [showAll, setShowAll] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -25,6 +25,7 @@ export default function TransactionList({ transactions, onEditCategory, onExport
   const q = query.trim().toLowerCase()
   const filtered = transactions.filter(t =>
     (filter !== "anomalies" || t.is_anomaly) &&
+    (!categoryFilter || displayCat(t.ml_category) === categoryFilter) &&
     (!q || t.name.toLowerCase().includes(q) || displayCat(t.ml_category).toLowerCase().includes(q))
   )
   const shown = showAll ? filtered : filtered.slice(0, 7)
@@ -34,6 +35,11 @@ export default function TransactionList({ transactions, onEditCategory, onExport
       <div className="txcard-hdr">
         <div className="txcard-title">Recent transactions</div>
         <div className="filter-row">
+          {categoryFilter && (
+            <button className="filter-btn active" onClick={onClearCategory} title="Clear category filter">
+              {categoryFilter} ✕
+            </button>
+          )}
           <input
             type="search"
             className="tx-search"
@@ -86,7 +92,7 @@ export default function TransactionList({ transactions, onEditCategory, onExport
             </div>
             <div className="txright">
               {/* Plaid: positive = money out (spend), negative = money in (income/refund). */}
-              <div className="txamt" style={t.amount < 0 ? { color: "#166534" } : undefined}>
+              <div className="txamt" style={t.amount < 0 ? { color: "var(--accent)" } : undefined}>
                 {t.amount < 0 ? "+" : "-"}{fmt(t.amount)}
               </div>
               <div className="txdate">{t.date?.slice(0, 10)}</div>
@@ -102,9 +108,11 @@ export default function TransactionList({ transactions, onEditCategory, onExport
           <div style={{ padding: "32px", textAlign: "center", color: "var(--text2)", fontSize: 14 }}>
             {q
               ? `No transactions match “${query.trim()}”.`
-              : filter === "anomalies"
-                ? "No anomalies this month — all clear."
-                : "No transactions found."}
+              : categoryFilter
+                ? `No ${categoryFilter} transactions this month.`
+                : filter === "anomalies"
+                  ? "No anomalies this month — all clear."
+                  : "No transactions found."}
           </div>
         )}
       </div>

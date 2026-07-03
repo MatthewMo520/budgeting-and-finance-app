@@ -17,6 +17,33 @@ export default function LoginPage() {
   const [totpCode, setTotpCode] = useState("")
   const [needsVerification, setNeedsVerification] = useState(false)
   const [resendStatus, setResendStatus] = useState("")
+  const [methods, setMethods] = useState(["totp"])
+  const [mfaMode, setMfaMode] = useState("totp")
+  const [otpStatus, setOtpStatus] = useState("")
+
+  async function sendEmailCode(token) {
+    setOtpStatus("Sending code…")
+    try {
+      const res = await fetch(`${apiBase}/auth/send-login-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_token: token }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Couldn't send the code")
+      setOtpStatus("Code sent — check your email.")
+    } catch (err) {
+      setOtpStatus(err.message)
+    }
+  }
+
+  function switchMfaMode(mode, token) {
+    setMfaMode(mode)
+    setTotpCode("")
+    setError("")
+    setOtpStatus("")
+    if (mode === "email") sendEmailCode(token)
+  }
 
   async function handleResendVerification() {
     setResendStatus("")
@@ -53,8 +80,15 @@ export default function LoginPage() {
         throw new Error(data.detail || "Login failed")
       }
       if (data.totp_required) {
+        const m = data.methods || ["totp"]
         setChallengeToken(data.challenge_token)
+        setMethods(m)
         setTotpRequired(true)
+        if (!m.includes("totp")) {
+          switchMfaMode("email", data.challenge_token)
+        } else {
+          setMfaMode("totp")
+        }
       } else {
         await saveTokens(data.access_token)
         navigate(data.totp_enabled || data.is_demo ? "/" : "/setup-2fa")
@@ -71,7 +105,8 @@ export default function LoginPage() {
     setError("")
     setLoading(true)
     try {
-      const res = await fetch(`${apiBase}/auth/verify-totp-login`, {
+      const endpoint = mfaMode === "email" ? "verify-email-otp-login" : "verify-totp-login"
+      const res = await fetch(`${apiBase}/auth/${endpoint}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -93,11 +128,21 @@ export default function LoginPage() {
     return (
       <AuthShell>
         <div className="auth-h">Two-factor auth</div>
-        <div className="auth-sub">Enter the 6-digit code from your authenticator app.</div>
+        <div className="auth-sub">
+          {mfaMode === "email"
+            ? "Enter the 6-digit code we emailed you."
+            : "Enter the 6-digit code from your authenticator app."}
+        </div>
         {error && <div className="auth-error">{error}</div>}
+        {mfaMode === "email" && otpStatus && (
+          <div className="auth-switch" style={{ marginTop: 0, marginBottom: 14 }}>
+            <span style={{ fontSize: 13, color: "var(--text2)" }}>{otpStatus}</span>
+            {" "}<a onClick={() => sendEmailCode(challengeToken)}>Resend</a>
+          </div>
+        )}
         <form onSubmit={handleTOTP}>
           <div className="field">
-            <label>Authenticator code</label>
+            <label>{mfaMode === "email" ? "Email code" : "Authenticator code"}</label>
             <input
               type="text"
               inputMode="numeric"
@@ -115,8 +160,15 @@ export default function LoginPage() {
             {loading ? "Verifying…" : "Verify"}
           </button>
         </form>
+        {methods.includes("totp") && methods.includes("email") && (
+          <div className="auth-switch">
+            {mfaMode === "totp"
+              ? <a onClick={() => switchMfaMode("email", challengeToken)}>Email me a code instead</a>
+              : <a onClick={() => switchMfaMode("totp", challengeToken)}>Use my authenticator app instead</a>}
+          </div>
+        )}
         <div className="auth-switch">
-          <a onClick={() => { setTotpRequired(false); setError("") }}>Back to login</a>
+          <a onClick={() => { setTotpRequired(false); setError(""); setOtpStatus("") }}>Back to login</a>
         </div>
       </AuthShell>
     )
