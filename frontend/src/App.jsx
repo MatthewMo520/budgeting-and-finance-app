@@ -10,8 +10,10 @@ import NetWorthChart from "./components/NetWorthChart"
 import Insights from "./components/Insights"
 import TransactionList from "./components/TransactionList"
 import Budgets from "./components/Budgets"
+import Goals from "./components/Goals"
 import Recurring from "./components/Recurring"
 import SpendingChart from "./components/SpendingChart"
+import SpendCalendar from "./components/SpendCalendar"
 import AnomalyAlert from "./components/AnomalyAlert"
 import PlaidLinkButton from "./components/PlaidLinkButton"
 import LoginPage from "./pages/LoginPage"
@@ -165,6 +167,17 @@ function Dashboard() {
   const [synced, setSynced] = useState(null)
   const [dashKey, setDashKey] = useState(0)
   const [categoryFilter, setCategoryFilter] = useState(null)
+  const [forecast, setForecast] = useState(null)
+
+  const currentMonth = new Date().toISOString().slice(0, 7)
+
+  useEffect(() => {
+    if (selectedMonth !== currentMonth) { setForecast(null); return }
+    apiFetch("/forecast")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setForecast(data))
+      .catch(() => setForecast(null))
+  }, [selectedMonth, currentMonth, apiFetch])
 
   const loadSummary = useCallback(() => {
     apiFetch("/transactions/summary")
@@ -251,6 +264,32 @@ function Dashboard() {
     setCategoryFilter(prev => prev === name ? null : name)
   }
 
+  // Keyboard shortcuts: ← → switch months, / focuses search.
+  useEffect(() => {
+    function onKey(e) {
+      const tag = e.target.tagName
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || e.target.isContentEditable) return
+      if (e.key === "/") {
+        e.preventDefault()
+        document.querySelector(".tx-search")?.focus()
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const idx = months.indexOf(selectedMonth)
+        if (idx < 0) return
+        // months are newest-first: ← moves back in time, → forward
+        const next = e.key === "ArrowLeft" ? idx + 1 : idx - 1
+        if (next >= 0 && next < months.length) switchMonth(months[next])
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [months, selectedMonth])
+
+  const [showTip, setShowTip] = useState(() => !localStorage.getItem("tipsDismissed"))
+  function dismissTip() {
+    localStorage.setItem("tipsDismissed", "1")
+    setShowTip(false)
+  }
+
   async function handleExportCsv() {
     try {
       const res = await apiFetch(`/transactions/export?month=${selectedMonth}`)
@@ -334,6 +373,12 @@ function Dashboard() {
         </div>
       ) : (
         <div key={dashKey} className="dash fadein">
+          {showTip && months.length > 1 && (
+            <div className="tip-bar">
+              <span>Tip: use <kbd>←</kbd> <kbd>→</kbd> to switch months and <kbd>/</kbd> to search transactions</span>
+              <button className="sync-dismiss" onClick={dismissTip}>Got it</button>
+            </div>
+          )}
           {synced !== null && (
             <div className="sync-banner" style={synced.error ? { background: "var(--red-bg)", borderColor: "var(--red-border)", color: "var(--red)" } : undefined}>
               <span>
@@ -372,6 +417,7 @@ function Dashboard() {
                 prevCount={prevTransactions.length}
                 anomalyCount={anomalies.length}
                 topCategory={topCategory}
+                forecast={forecast}
               />
               <TrendChart summary={summary} selectedMonth={selectedMonth} onMonth={switchMonth} />
               <SpendingChart
@@ -380,8 +426,14 @@ function Dashboard() {
                 selectedCategory={categoryFilter}
                 onSelectCategory={toggleCategoryFilter}
               />
-              <Budgets categoryTotals={categoryTotals} />
-              <Recurring />
+              <div className="duo-grid">
+                <Budgets categoryTotals={categoryTotals} />
+                <Goals />
+              </div>
+              <div className="duo-grid">
+                <SpendCalendar transactions={transactions} month={selectedMonth} />
+                <Recurring />
+              </div>
               <TransactionList
                 transactions={transactions}
                 onEditCategory={handleEditCategory}

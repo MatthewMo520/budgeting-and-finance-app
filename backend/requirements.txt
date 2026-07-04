@@ -19,3 +19,4 @@ slowapi
 redis
 zxcvbn
 email-validator
+apscheduler==3.10.4

@@ -86,6 +86,30 @@ class Budget(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class DigestLog(Base):
+    """Records which month-end digest emails were sent (one per user per month)."""
+    __tablename__ = "digest_log"
+    __table_args__ = (UniqueConstraint("user_id", "month", name="uq_digest_user_month"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    month = Column(String, nullable=False)  # the digested month, "YYYY-MM"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SavingsGoal(Base):
+    """A savings target. Progress = net cash flow (income − spend, transfers
+    excluded) accumulated since the goal was created, floored at zero."""
+    __tablename__ = "savings_goals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    target_amount = Column(Float, nullable=False)
+    target_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 

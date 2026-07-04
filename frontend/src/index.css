@@ -114,9 +114,11 @@ input{font-family:inherit}
 .mcard-sub.red{color:var(--red)}
 .mcard-sub.amber{color:var(--amber)}
 .mcard-sub.muted{color:var(--text2)}
+.mcard-extra{font-size:12px;color:var(--text2);margin-top:4px}
 
 /* ── CHARTS ───────────────────────────────────────── */
 .charts-grid{display:grid;grid-template-columns:1fr 400px;gap:14px}
+.duo-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
 .chart-card{background:var(--surface);border-radius:var(--r);padding:26px 24px;box-shadow:var(--shadow)}
 .chart-title{font-size:16px;font-weight:700;letter-spacing:-.2px;margin-bottom:22px}
 .bar-rows{display:flex;flex-direction:column;gap:15px}
@@ -166,6 +168,12 @@ input{font-family:inherit}
 .trend-label{font-size:11px;color:var(--text3);font-weight:500;white-space:nowrap}
 .trend-label.active{color:var(--text);font-weight:700}
 
+/* ── DAILY SPEND CALENDAR ─────────────────────────── */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-dow{font-size:11px;color:var(--text3);text-align:center;font-weight:600;padding-bottom:2px}
+.cal-cell{aspect-ratio:1/1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;font-weight:600;color:var(--text);min-height:0}
+.cal-cell .cal-amt{font-size:10px;font-weight:500;color:var(--text2)}
+
 /* ── TRANSACTION LIST ─────────────────────────────── */
 .txcard{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
 .txcard-hdr{padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
@@ -194,6 +202,10 @@ input{font-family:inherit}
 .txmore{width:100%;padding:13px;border:none;border-top:1px solid var(--border);background:none;font-size:14px;color:var(--text2);font-weight:500;transition:background .12s}
 .txmore:hover{background:var(--bg)}
 
+/* ── TIP BAR ──────────────────────────────────────── */
+.tip-bar{background:var(--surface);border:1px dashed var(--border);border-radius:var(--r-md);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text2);gap:12px}
+.tip-bar kbd{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-family:inherit;font-size:12px;color:var(--text)}
+
 /* ── SYNC BANNER ──────────────────────────────────── */
 .sync-banner{background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--r-md);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;font-size:14px;color:var(--accent)}
 .sync-dismiss{border:none;background:none;font-size:13px;color:var(--text2);cursor:pointer}
@@ -220,6 +232,7 @@ input{font-family:inherit}
 @media(max-width:940px){
   .metric-grid{grid-template-columns:repeat(2,1fr)}
   .charts-grid{grid-template-columns:1fr}
+  .duo-grid{grid-template-columns:1fr}
   .hdr-months{display:none}
   .hdr-month-select{display:block;flex:1;min-width:0}
   .dash{padding:20px 16px}

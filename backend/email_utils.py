@@ -63,6 +63,50 @@ def send_otp_email(to_email: str, code: str) -> None:
     client.send(message)
 
 
+def send_monthly_digest(to_email: str, digest: dict) -> None:
+    month_name = digest["month"]
+    try:
+        from datetime import datetime as _dt
+        month_name = _dt.strptime(digest["month"], "%Y-%m").strftime("%B %Y")
+    except ValueError:
+        pass
+    if not SENDGRID_API_KEY:
+        print(f"[dev] Monthly digest for {to_email}: {month_name} — ${digest['total_spend']:,.0f} spent")
+        return
+
+    mom = ""
+    if digest["mom_pct"] is not None:
+        arrow = "↑" if digest["mom_pct"] > 0 else "↓"
+        mom = f"<p style='color:#555;'>{arrow} {abs(digest['mom_pct'])}% vs the month before.</p>"
+    cats = "".join(
+        f"<li style='margin-bottom:4px;'>{c['category']}: <strong>${c['amount']:,.0f}</strong></li>"
+        for c in digest["top_categories"]
+    )
+    insights = "".join(
+        f"<li style='margin-bottom:4px;'>{i['title']} — {i['detail']}</li>" for i in digest["insights"]
+    )
+    message = Mail(
+        from_email=FROM_EMAIL,
+        to_emails=to_email,
+        subject=f"Your {month_name} money recap — Finance App",
+        html_content=f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+          <h2 style="color:#166534;margin-bottom:8px;">Your {month_name} recap</h2>
+          <p style="font-size:24px;font-weight:700;color:#1a1714;margin:0 0 4px;">${digest['total_spend']:,.0f} spent</p>
+          {mom}
+          <p style="color:#555;margin:16px 0 6px;font-weight:600;">Top categories</p>
+          <ul style="color:#555;padding-left:18px;margin:0;">{cats or '<li>No categorized spending</li>'}</ul>
+          {f'<p style="color:#555;margin:16px 0 6px;font-weight:600;">Worth a look</p><ul style="color:#555;padding-left:18px;margin:0;">{insights}</ul>' if insights else ''}
+          <p style="color:#999;font-size:12px;margin-top:24px;">
+            {digest['transaction_count']} transactions · {digest['anomaly_count']} flagged as unusual.
+          </p>
+        </div>
+        """,
+    )
+    client = SendGridAPIClient(SENDGRID_API_KEY)
+    client.send(message)
+
+
 def send_budget_alert_email(to_email: str, category: str, spent: float, limit: float, threshold: int) -> None:
     headline = f"You've used {threshold}% of your {category} budget" if threshold < 100 \
         else f"You've gone over your {category} budget"

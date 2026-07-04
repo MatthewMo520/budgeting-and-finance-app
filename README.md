@@ -23,7 +23,9 @@ Try it without creating an account or linking a real bank:
 - Flags anomalies per user using Isolation Forest, plus a rule-based **insights feed**: category spending spikes, newly detected subscriptions, possible duplicate charges
 - **Budgets** with progress bars and **email alerts** at 90% / 100% of a limit; **recurring/subscription detection**
 - Month-by-month breakdown with animated charts, a **12-month trend chart** (spending / income / net — click a bar to jump to that month), and **category drill-down** (click a chart category to filter the list)
-- **Transaction search** and one-click **CSV export** per month
+- **Cash-flow forecast** ("on track for ~$2,400 this month" — run-rate plus upcoming recurring charges) and **savings goals** funded by your real net cash flow
+- A **month-end email recap** (total spend, top categories, anomalies, insights) sent automatically on the 1st
+- **Daily-spend calendar heatmap**, keyboard shortcuts (← → months, / to search), **transaction search**, and one-click **CSV export**
 - JWT auth with email verification and mandatory 2FA — **authenticator app or emailed codes**, user's choice
 - **Dark mode** (light / dark / system, persisted) and a mobile-friendly layout that installs as a **PWA**
 
@@ -93,13 +95,14 @@ DEMO_PASSWORD=
 
 ## Tests
 
-Backend unit tests (categorization rules, recurring detection, auth helpers):
+Unit tests (pure logic: categorization, recurring detection, insights, forecast, auth helpers) plus a full **API integration suite** — register→verify→login→2FA, transaction scoping, spend accounting, and the mocked Plaid sync engine — run against a throwaway Postgres database:
 
 ```bash
-cd backend && JWT_SECRET_KEY=test pytest -q tests/
+docker compose up db -d                            # integration tests need Postgres
+cd backend && JWT_SECRET_KEY=test pytest -q tests/  # integration auto-skips if the DB is down
 ```
 
-CI (GitHub Actions) runs the backend tests + a frontend build on every push/PR.
+CI (GitHub Actions) runs everything against a `postgres:15` service container, plus a frontend build, on every push/PR.
 
 ## Sandbox testing
 
