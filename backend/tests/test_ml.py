@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from ml import rule_category, detect_recurring, _normalize_merchant
+from ml import rule_category, detect_recurring, _normalize_merchant, is_spend, compute_insights
 
 
 class FakeTxn:
@@ -9,6 +9,12 @@ class FakeTxn:
         self.amount = amount
         self.date = date
         self.ml_category = ml_category
+
+
+class FakeBudget:
+    def __init__(self, category, monthly_limit):
+        self.category = category
+        self.monthly_limit = monthly_limit
 
 
 def test_rule_category_known_merchants():
@@ -60,3 +66,42 @@ def test_detect_recurring_ignores_income():
     base = datetime(2026, 1, 1)
     txns = [FakeTxn("Paycheck", -2000.0, base + timedelta(days=30 * i)) for i in range(4)]
     assert detect_recurring(txns) == []
+
+
+def test_detect_recurring_ignores_card_payments():
+    # a monthly credit-card payment is a transfer, not a subscription
+    base = datetime(2026, 1, 1)
+    txns = [FakeTxn("CREDIT CARD 3333 PAYMENT", 850.0, base + timedelta(days=30 * i), "LOAN_PAYMENTS") for i in range(4)]
+    assert detect_recurring(txns) == []
+
+
+def test_is_spend_excludes_transfers_and_payments():
+    # card payments/transfers would double-count purchases already logged
+    assert is_spend(50.0, "FOOD_AND_DRINK")
+    assert not is_spend(850.0, "LOAN_PAYMENTS")   # credit card payment
+    assert not is_spend(200.0, "TRANSFER_OUT")
+    assert not is_spend(200.0, "TRANSFER_IN")
+    assert not is_spend(-2000.0, "INCOME")        # inflow
+    assert not is_spend(-12.0, "FOOD_AND_DRINK")  # refund is not spend
+    assert is_spend(50.0, None)                   # uncategorized outflow counts
+
+
+def test_compute_insights_flags_category_spike():
+    now = datetime(2026, 7, 15)
+    txns = [FakeTxn("Cafe", 100.0, datetime(2026, m, 10)) for m in (4, 5, 6)]  # $100/mo average
+    txns.append(FakeTxn("Cafe", 300.0, datetime(2026, 7, 5)))                  # 3× this month
+    spikes = [i for i in compute_insights(txns, now=now) if i["type"] == "spike"]
+    assert spikes and "Dining" in spikes[0]["title"]
+
+
+def test_compute_insights_flags_duplicate_and_budget():
+    now = datetime(2026, 7, 15)
+    txns = [
+        FakeTxn("Gym Co", 49.99, datetime(2026, 7, 10)),
+        FakeTxn("Gym Co", 49.99, datetime(2026, 7, 11)),  # same amount, next day
+    ]
+    budgets = [FakeBudget("Dining", 100.0)]
+    txns.append(FakeTxn("Cafe", 95.0, datetime(2026, 7, 3)))  # 95% of Dining budget
+    types = {i["type"] for i in compute_insights(txns, budgets, now=now)}
+    assert "duplicate" in types
+    assert "budget" in types

@@ -3,9 +3,20 @@ import { displayCat, catStyle, ICONS, EDITABLE_CATEGORIES } from "../categories.
 
 const fmt = (n) => "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-function CatIcon({ mlCategory }) {
+function CatIcon({ mlCategory, logoUrl }) {
   const name = displayCat(mlCategory)
   const { color, bg } = catStyle(mlCategory)
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt=""
+        loading="lazy"
+        style={{ width: 40, height: 40, borderRadius: 10, objectFit: "cover", background: bg, flexShrink: 0 }}
+        onError={e => { e.currentTarget.style.display = "none" }}
+      />
+    )
+  }
   return (
     <div className="txicon" style={{ width: 40, height: 40, background: bg, color }}>
       {ICONS[name] || ICONS.Other}
@@ -26,7 +37,7 @@ export default function TransactionList({ transactions, onEditCategory, onExport
   const filtered = transactions.filter(t =>
     (filter !== "anomalies" || t.is_anomaly) &&
     (!categoryFilter || displayCat(t.ml_category) === categoryFilter) &&
-    (!q || t.name.toLowerCase().includes(q) || displayCat(t.ml_category).toLowerCase().includes(q))
+    (!q || t.name.toLowerCase().includes(q) || (t.merchant_name || "").toLowerCase().includes(q) || displayCat(t.ml_category).toLowerCase().includes(q))
   )
   const shown = showAll ? filtered : filtered.slice(0, 7)
 
@@ -65,9 +76,9 @@ export default function TransactionList({ transactions, onEditCategory, onExport
       <div className="txlist">
         {shown.map(t => (
           <div key={t.id} className="txrow">
-            <CatIcon mlCategory={t.ml_category} />
+            <CatIcon mlCategory={t.ml_category} logoUrl={t.logo_url} />
             <div className="txinfo">
-              <div className="txname">{t.name}</div>
+              <div className="txname">{t.merchant_name || t.name}</div>
               <div className="txmeta">
                 {editingId === t.id ? (
                   <select

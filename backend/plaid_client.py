@@ -6,6 +6,7 @@ from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUse
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_remove_request import ItemRemoveRequest
@@ -129,6 +130,26 @@ def get_balances(access_token: str, environment: str = PLAID_ENV) -> list:
         }
         for a in resp.accounts
     ]
+
+
+def sync_transactions(access_token: str, cursor: str | None, environment: str = PLAID_ENV):
+    """Cursor-based /transactions/sync. Returns (added, modified, removed_ids,
+    next_cursor). A None/empty cursor performs the initial full-history sync.
+    Unlike /transactions/get this properly reports modified and removed
+    transactions (e.g. pending→posted transitions)."""
+    added, modified, removed_ids = [], [], []
+    while True:
+        kwargs = dict(access_token=access_token, count=500)
+        if cursor:
+            kwargs["cursor"] = cursor
+        resp = _client_for(environment).transactions_sync(TransactionsSyncRequest(**kwargs))
+        added.extend(resp.added)
+        modified.extend(resp.modified)
+        removed_ids.extend(r.transaction_id for r in resp.removed)
+        cursor = resp.next_cursor
+        if not resp.has_more:
+            break
+    return added, modified, removed_ids, cursor
 
 
 def get_transactions(access_token: str, start_date: date, end_date: date, environment: str = PLAID_ENV) -> list:

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey, Integer, text, UniqueConstraint
+from sqlalchemy import Column, String, Float, Date, DateTime, Boolean, ForeignKey, Integer, text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from database import Base
 from crypto import EncryptedString
@@ -42,6 +42,35 @@ class LinkedAccount(Base):
     access_token = Column(EncryptedString, nullable=False)
     item_id = Column(String, unique=True, nullable=False, index=True)  # maps Plaid webhooks → account
     institution_name = Column(String, nullable=True)
+    # Cursor for Plaid /transactions/sync — NULL means no sync has run yet.
+    sync_cursor = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BalanceSnapshot(Base):
+    """One net-worth data point per user per day, written when fresh balances
+    are fetched from Plaid (see /plaid/balances)."""
+    __tablename__ = "balance_snapshots"
+    __table_args__ = (UniqueConstraint("user_id", "date", name="uq_snapshot_user_date"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    date = Column(Date, nullable=False)
+    total_available = Column(Float, nullable=False)
+    total_current = Column(Float, nullable=False)
+
+
+class BudgetAlert(Base):
+    """Tracks which budget-threshold emails were already sent, so each alert
+    (per user, category, month, threshold) goes out exactly once."""
+    __tablename__ = "budget_alerts"
+    __table_args__ = (UniqueConstraint("user_id", "category", "month", "threshold", name="uq_budget_alert"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category = Column(String, nullable=False)   # display name e.g. "Dining"
+    month = Column(String, nullable=False)      # "YYYY-MM"
+    threshold = Column(Integer, nullable=False)  # 90 or 100 (percent)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -64,6 +93,8 @@ class Transaction(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     plaid_transaction_id = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
+    merchant_name = Column(String, nullable=True)  # Plaid's cleaned merchant name
+    logo_url = Column(String, nullable=True)       # merchant logo from Plaid enrichment
     amount = Column(Float, nullable=False)
     date = Column(DateTime, nullable=False)
     category = Column(String, nullable=True)

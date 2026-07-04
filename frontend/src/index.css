@@ -70,6 +70,7 @@ input{font-family:inherit}
 .hdr-mtab{padding:5px 15px;border:none;background:transparent;font-size:14px;font-weight:500;color:var(--text2);border-radius:6px;transition:all .15s;white-space:nowrap;flex-shrink:0}
 .hdr-mtab:hover:not(.active){background:var(--bg);color:var(--text)}
 .hdr-mtab.active{background:var(--text);color:var(--bg)}
+.hdr-month-select{display:none;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:500;font-family:inherit;max-width:120px}
 .hdr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .hdr-connect{padding:6px 14px;border-radius:8px;background:var(--green-bg);border:1.5px solid var(--green-border);color:var(--accent);font-size:13px;font-weight:600;transition:background .15s}
 .hdr-connect:hover{background:var(--green-bg-hover)}
@@ -209,11 +210,24 @@ input{font-family:inherit}
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }
 
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* ── SKELETONS ────────────────────────────────────── */
+.skeleton{background:linear-gradient(90deg,var(--track) 25%,var(--border) 50%,var(--track) 75%);background-size:200% 100%;animation:shimmer 1.4s ease infinite;border-radius:var(--r-sm)}
+@keyframes shimmer{to{background-position:-200% 0}}
+
 /* ── RESPONSIVE ───────────────────────────────────── */
 @media(max-width:940px){
   .metric-grid{grid-template-columns:repeat(2,1fr)}
   .charts-grid{grid-template-columns:1fr}
   .hdr-months{display:none}
+  .hdr-month-select{display:block;flex:1;min-width:0}
   .dash{padding:20px 16px}
-  .hdr{padding:0 16px}
+  .hdr{padding:0 16px;gap:10px}
+  .trend-bars{gap:4px;height:130px}
+  .trend-label{font-size:9px}
+  .trend-amt{font-size:9px}
+  .trend-sub{display:none}
+  .txcard-hdr{flex-wrap:wrap;gap:10px}
+  .tx-search{width:130px}
 }

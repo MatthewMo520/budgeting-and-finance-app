@@ -8,10 +8,10 @@ export const PLAID_TO_DISPLAY = {
   ENTERTAINMENT: "Entertainment",
   PERSONAL_CARE: "Health",
   MEDICAL: "Health",
-  LOAN_PAYMENTS: "Other",
-  TRANSFER_OUT: "Other",
-  TRANSFER_IN: "Other",
-  INCOME: "Other",
+  LOAN_PAYMENTS: "Payments",
+  TRANSFER_OUT: "Transfer",
+  TRANSFER_IN: "Transfer",
+  INCOME: "Income",
   GENERAL_SERVICES: "Other",
   GOVERNMENT_AND_NON_PROFIT: "Other",
   HOME_IMPROVEMENT: "Shopping",
@@ -30,13 +30,26 @@ export const CAT = {
   Utilities:     { color: "#b45309" },
   Entertainment: { color: "#f59e0b" },
   Health:        { color: "#10b981" },
+  Payments:      { color: "#64748b" },
+  Transfer:      { color: "#78716c" },
+  Income:        { color: "#16a34a" },
   Other:         { color: "#9ca3af" },
+}
+
+// Display categories that do NOT count as spending: card payments and
+// transfers move money between the user's own accounts (the underlying
+// purchases are already logged), and income isn't an outflow at all.
+export const NON_SPEND = new Set(["Payments", "Transfer", "Income"])
+
+// True when a transaction should count toward spend totals/charts.
+export function isSpend(t) {
+  return t.amount > 0 && !NON_SPEND.has(displayCat(t.ml_category))
 }
 
 // Categories a user can pick when correcting a transaction (display names).
 export const EDITABLE_CATEGORIES = [
   "Dining", "Groceries", "Transport", "Shopping", "Utilities",
-  "Entertainment", "Health", "Travel", "Income", "Transfer", "Other",
+  "Entertainment", "Health", "Travel", "Income", "Transfer", "Payments", "Other",
 ]
 
 export function displayCat(mlCategory) {
@@ -94,6 +107,22 @@ export const ICONS = {
   Health: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+    </svg>
+  ),
+  Payments: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+    </svg>
+  ),
+  Transfer: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+      <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+    </svg>
+  ),
+  Income: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
     </svg>
   ),
   Other: (

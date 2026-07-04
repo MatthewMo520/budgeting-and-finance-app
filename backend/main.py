@@ -11,13 +11,16 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import case, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import engine, Base, get_db, SessionLocal
-from models import User, Transaction, LinkedAccount, Budget
+from models import User, Transaction, LinkedAccount, Budget, BalanceSnapshot
 import plaid_client as pc
-from ml import run_ml_pipeline, run_ml_for_user, detect_recurring
+from ml import (
+    run_ml_pipeline, run_ml_for_user, detect_recurring, compute_insights,
+    DISPLAY_TO_LABEL, is_spend,
+)
 from webhook_verify import verify_webhook
 from auth import get_current_user
 from auth_routes import router as auth_router
@@ -87,6 +90,9 @@ def _run_startup_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_otp_code VARCHAR",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_otp_expires TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_otp_attempts INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE linked_accounts ADD COLUMN IF NOT EXISTS sync_cursor VARCHAR",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS merchant_name VARCHAR",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS logo_url VARCHAR",
     ]
     try:
         with engine.begin() as conn:
@@ -195,16 +201,14 @@ def sync_transactions(
         raise HTTPException(status_code=400, detail="No bank account linked.")
 
     environment = pc.env_for_user(current_user)
-    end = date.today()
-    start = end - timedelta(days=30)
     total_added = 0
     pending = False
     for acct in accounts:
-        transactions = _get_transactions_or_none(acct.access_token, start, end, environment)
-        if transactions is None:
+        added = _sync_linked_account(db, acct, environment)
+        if added is None:
             pending = True
             continue
-        total_added += _upsert_transactions(db, current_user.id, transactions)
+        total_added += added
 
     if total_added > 0:
         background_tasks.add_task(run_ml_for_user, current_user.id)
@@ -246,7 +250,45 @@ def get_balances_endpoint(
         except Exception:
             result.append({"institution": institution, "accounts": [], "error": True})
     _balance_cache[key] = (now, result)
+    _record_balance_snapshot(db, current_user.id, result)
     return result
+
+
+def _record_balance_snapshot(db: Session, user_id, balance_payload):
+    """Upsert today's net-worth data point from a fresh balances fetch."""
+    accounts = [a for b in balance_payload if not b.get("error") for a in b["accounts"]]
+    if not accounts:
+        return
+    total_available = sum((a["available"] if a["available"] is not None else a["current"]) or 0 for a in accounts)
+    total_current = sum(a["current"] or 0 for a in accounts)
+    today = date.today()
+    snap = db.query(BalanceSnapshot).filter(
+        BalanceSnapshot.user_id == user_id, BalanceSnapshot.date == today
+    ).first()
+    if snap:
+        snap.total_available = total_available
+        snap.total_current = total_current
+    else:
+        db.add(BalanceSnapshot(user_id=user_id, date=today,
+                               total_available=total_available, total_current=total_current))
+    db.commit()
+
+
+@app.get("/networth")
+@limiter.limit("60/minute")
+def get_networth(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Daily net-worth snapshots (recorded whenever fresh balances are fetched)."""
+    rows = (
+        db.query(BalanceSnapshot)
+        .filter(BalanceSnapshot.user_id == current_user.id)
+        .order_by(BalanceSnapshot.date.asc())
+        .all()
+    )
+    return [
+        {"date": r.date.isoformat(), "total_available": round(r.total_available, 2),
+         "total_current": round(r.total_current, 2)}
+        for r in rows
+    ]
 
 
 # ── Manage linked accounts ────────────────────────────────────────────────────
@@ -424,17 +466,8 @@ def export_transactions(
     )
 
 
-# Display category name → canonical Plaid-style label stored in ml_category.
-_DISPLAY_TO_LABEL = {
-    "Dining": "FOOD_AND_DRINK", "Groceries": "GROCERIES", "Transport": "TRANSPORTATION",
-    "Shopping": "GENERAL_MERCHANDISE", "Utilities": "RENT_AND_UTILITIES",
-    "Entertainment": "ENTERTAINMENT", "Health": "MEDICAL", "Travel": "TRAVEL",
-    "Income": "INCOME", "Transfer": "TRANSFER_OUT", "Other": "OTHER",
-}
-
-
 class CategoryUpdate(BaseModel):
-    category: str  # a display name from _DISPLAY_TO_LABEL
+    category: str  # a display name from DISPLAY_TO_LABEL
 
 
 @app.patch("/transactions/{txn_id}/category")
@@ -446,7 +479,7 @@ def update_transaction_category(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    label = _DISPLAY_TO_LABEL.get(body.category)
+    label = DISPLAY_TO_LABEL.get(body.category)
     if not label:
         raise HTTPException(status_code=422, detail="Unknown category")
     txn = db.query(Transaction).filter(
@@ -461,6 +494,16 @@ def update_transaction_category(
     ).update({Transaction.ml_category: label, Transaction.category_overridden: True})
     db.commit()
     return {"message": "Category updated", "ml_category": label}
+
+
+@app.get("/insights")
+@limiter.limit("30/minute")
+def get_insights(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Rule-generated observations: category spikes, new subscriptions,
+    possible duplicate charges, budgets nearly used."""
+    txns = db.query(Transaction).filter(Transaction.user_id == current_user.id).all()
+    budgets = db.query(Budget).filter(Budget.user_id == current_user.id).all()
+    return compute_insights(txns, budgets)
 
 
 @app.get("/transactions/recurring")
@@ -487,7 +530,7 @@ def list_budgets(request: Request, db: Session = Depends(get_db), current_user: 
 @app.put("/budgets")
 @limiter.limit("30/minute")
 def set_budget(request: Request, body: BudgetIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if body.category not in _DISPLAY_TO_LABEL:
+    if body.category not in DISPLAY_TO_LABEL:
         raise HTTPException(status_code=422, detail="Unknown category")
     if body.monthly_limit <= 0:
         raise HTTPException(status_code=422, detail="Limit must be positive")
@@ -515,24 +558,25 @@ def get_monthly_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Per-month totals for the trend chart: spend (outflows), income (inflows), count."""
-    month_col = func.to_char(Transaction.date, "YYYY-MM")
-    rows = (
-        db.query(
-            month_col.label("month"),
-            func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)).label("spend"),
-            func.sum(case((Transaction.amount < 0, -Transaction.amount), else_=0)).label("income"),
-            func.count().label("count"),
-        )
-        .filter(Transaction.user_id == current_user.id)
-        .group_by(month_col)
-        .order_by(month_col.asc())
-        .all()
-    )
+    """Per-month totals for the trend chart: spend, income, count.
+
+    Category-aware: card payments and inter-account transfers are excluded from
+    spend (they'd double-count purchases already logged) and transfers are
+    excluded from income.
+    """
+    txns = db.query(Transaction).filter(Transaction.user_id == current_user.id).all()
+    agg = {}
+    for t in txns:
+        label = ((t.ml_category or t.category) or "").upper()
+        a = agg.setdefault(t.date.strftime("%Y-%m"), {"spend": 0.0, "income": 0.0, "count": 0})
+        a["count"] += 1
+        if is_spend(t.amount, label):
+            a["spend"] += t.amount
+        elif t.amount < 0 and label not in ("TRANSFER_IN", "TRANSFER_OUT"):
+            a["income"] += -t.amount
     return [
-        {"month": r.month, "spend": round(float(r.spend or 0), 2),
-         "income": round(float(r.income or 0), 2), "count": r.count}
-        for r in rows
+        {"month": m, "spend": round(v["spend"], 2), "income": round(v["income"], 2), "count": v["count"]}
+        for m, v in sorted(agg.items())
     ]
 
 
@@ -577,13 +621,8 @@ def _sync_account_async(account_id: str):
             return
         user = db.query(User).filter(User.id == acct.user_id).first()
         environment = pc.env_for_user(user) if user else pc.PLAID_ENV
-        end = date.today()
-        start = end - timedelta(days=365)
-        transactions = _get_transactions_or_none(acct.access_token, start, end, environment)
-        if not transactions:
-            return
-        added = _upsert_transactions(db, acct.user_id, transactions)
-        if added > 0:
+        added = _sync_linked_account(db, acct, environment)
+        if added:
             run_ml_pipeline(db, acct.user_id)
     finally:
         db.close()
@@ -604,11 +643,24 @@ def _get_transactions_or_none(access_token, start, end, environment):
         raise
 
 
+def _merchant_fields(t):
+    """Best-effort merchant name + logo from a Plaid transaction."""
+    merchant = getattr(t, "merchant_name", None)
+    logo = getattr(t, "logo_url", None)
+    if not logo:
+        for cp in getattr(t, "counterparties", None) or []:
+            if getattr(cp, "logo_url", None):
+                logo = cp.logo_url
+                break
+    return merchant, logo
+
+
 def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
-    # Fetch existing ids once and dedupe in memory instead of one query per txn.
+    """Insert new transactions and update existing ones in place (the sync API
+    reports modified rows, e.g. amount corrections). Returns the number added."""
     existing = {
-        row[0] for row in db.query(Transaction.plaid_transaction_id)
-        .filter(Transaction.user_id == user_id).all()
+        row.plaid_transaction_id: row
+        for row in db.query(Transaction).filter(Transaction.user_id == user_id).all()
     }
     added = 0
     for t in plaid_txns:
@@ -616,27 +668,67 @@ def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
         # they post, so storing them now would leave a duplicate row behind.
         if getattr(t, "pending", False):
             continue
-        if t.transaction_id in existing:
+        merchant, logo = _merchant_fields(t)
+        category = t.personal_finance_category.primary if t.personal_finance_category else None
+        row = existing.get(t.transaction_id)
+        if row:
+            row.name = t.name
+            row.amount = t.amount
+            row.date = datetime.combine(t.date, datetime.min.time())
+            row.category = category
+            row.merchant_name = merchant or row.merchant_name
+            row.logo_url = logo or row.logo_url
             continue
-        existing.add(t.transaction_id)
         txn = Transaction(
             user_id=user_id,
             plaid_transaction_id=t.transaction_id,
             name=t.name,
+            merchant_name=merchant,
+            logo_url=logo,
             amount=t.amount,
             date=datetime.combine(t.date, datetime.min.time()),
-            category=t.personal_finance_category.primary if t.personal_finance_category else None,
+            category=category,
         )
         db.add(txn)
+        existing[t.transaction_id] = txn
         added += 1
     db.commit()
     return added
+
+
+def _sync_linked_account(db: Session, acct: LinkedAccount, environment: str):
+    """Cursor-based sync for one linked account: upserts added+modified rows,
+    deletes removed ones, persists the cursor. Returns the number of new
+    transactions, or None when Plaid is still preparing them (PRODUCT_NOT_READY)."""
+    try:
+        added, modified, removed_ids, cursor = pc.sync_transactions(
+            acct.access_token, acct.sync_cursor, environment
+        )
+    except plaid.ApiException as e:
+        try:
+            code = json.loads(e.body).get("error_code")
+        except (ValueError, TypeError):
+            code = None
+        if code == "PRODUCT_NOT_READY":
+            return None
+        raise
+    new_count = _upsert_transactions(db, acct.user_id, added + modified)
+    if removed_ids:
+        db.query(Transaction).filter(
+            Transaction.user_id == acct.user_id,
+            Transaction.plaid_transaction_id.in_(removed_ids),
+        ).delete(synchronize_session=False)
+    acct.sync_cursor = cursor
+    db.commit()
+    return new_count
 
 
 def _serialize(t: Transaction) -> dict:
     return {
         "id": str(t.id),
         "name": t.name,
+        "merchant_name": t.merchant_name,
+        "logo_url": t.logo_url,
         "amount": t.amount,
         "date": t.date.isoformat(),
         "category": t.category,

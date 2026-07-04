@@ -63,6 +63,32 @@ def send_otp_email(to_email: str, code: str) -> None:
     client.send(message)
 
 
+def send_budget_alert_email(to_email: str, category: str, spent: float, limit: float, threshold: int) -> None:
+    headline = f"You've used {threshold}% of your {category} budget" if threshold < 100 \
+        else f"You've gone over your {category} budget"
+    if not SENDGRID_API_KEY:
+        print(f"[dev] Budget alert for {to_email}: {headline} (${spent:,.0f} / ${limit:,.0f})")
+        return
+    message = Mail(
+        from_email=FROM_EMAIL,
+        to_emails=to_email,
+        subject=f"{headline} — Finance App",
+        html_content=f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+          <h2 style="color:{'#dc2626' if threshold >= 100 else '#b45309'};margin-bottom:8px;">{headline}</h2>
+          <p style="color:#555;margin-bottom:24px;">
+            You've spent <strong>${spent:,.0f}</strong> of your <strong>${limit:,.0f}</strong> {category} budget this month.
+          </p>
+          <p style="color:#999;font-size:12px;">
+            You set this budget in Fintrack. Adjust or remove it any time from the dashboard.
+          </p>
+        </div>
+        """,
+    )
+    client = SendGridAPIClient(SENDGRID_API_KEY)
+    client.send(message)
+
+
 def send_verification_email(to_email: str, token: str) -> None:
     verify_url = f"{FRONTEND_URL}/verify-email?token={token}"
     message = Mail(

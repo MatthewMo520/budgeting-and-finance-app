@@ -17,12 +17,15 @@ Try it without creating an account or linking a real bank:
 ## What it does
 
 - Links real bank accounts through Plaid (production), with a sandbox-routed demo account
-- Supports **multiple linked banks** per user (connect/disconnect); new transactions **auto-sync** via Plaid webhooks
-- Pulls 12 months of transaction history and categorizes each transaction — with **manual category override** that the model learns from
-- Flags anomalies per user using Isolation Forest (~15% contamination)
-- **Budgets** (monthly limit per category, progress bars) and **recurring/subscription detection**
-- Month-by-month spending breakdown with animated charts
-- JWT auth with email verification and mandatory TOTP 2FA
+- Shows **live account balances** per linked bank and tracks **net worth over time**; supports **multiple linked banks** per user (connect/disconnect); transactions stay current via Plaid's **cursor-based sync API** + webhooks (handles corrections and removals, not just new rows)
+- Pulls full transaction history with **merchant names and logos**, and categorizes each transaction — with **manual category override** that the model learns from
+- **Honest spend accounting**: credit-card payments and inter-account transfers don't count as spending (no double-counting a purchase and the payment that covers it)
+- Flags anomalies per user using Isolation Forest, plus a rule-based **insights feed**: category spending spikes, newly detected subscriptions, possible duplicate charges
+- **Budgets** with progress bars and **email alerts** at 90% / 100% of a limit; **recurring/subscription detection**
+- Month-by-month breakdown with animated charts, a **12-month trend chart** (spending / income / net — click a bar to jump to that month), and **category drill-down** (click a chart category to filter the list)
+- **Transaction search** and one-click **CSV export** per month
+- JWT auth with email verification and mandatory 2FA — **authenticator app or emailed codes**, user's choice
+- **Dark mode** (light / dark / system, persisted) and a mobile-friendly layout that installs as a **PWA**
 
 ## ML layer
 
@@ -35,15 +38,17 @@ Try it without creating an account or linking a real bank:
 - **ML:** scikit-learn (TF-IDF + Random Forest categorizer, Isolation Forest anomaly detector)
 - **Bank data:** Plaid API (per-user sandbox/production routing)
 - **Frontend:** React + Vite + Tailwind CSS
-- **Auth:** JWT (access in memory, refresh in an httpOnly cookie) + bcrypt + TOTP (pyotp) + SendGrid
+- **Auth:** JWT (access in memory, refresh in an httpOnly cookie) + bcrypt + 2FA via TOTP (pyotp) or email codes + SendGrid
 - **Deploy:** Railway
 
 ## Security
 
 - Access token in memory, refresh token in an `httpOnly` cookie (no JWTs in `localStorage`)
 - JWT revocation via a per-user `token_version`; password change/reset revokes existing sessions
-- Plaid access tokens encrypted at rest (Fernet); email-verification / password-reset tokens stored as SHA-256 hashes; TOTP secrets encrypted
-- Re-authentication required to disable 2FA or delete an account
+- Plaid access tokens encrypted at rest (Fernet); email-verification / password-reset tokens and email 2FA codes stored as SHA-256 hashes; TOTP secrets encrypted
+- Email 2FA codes expire after 10 minutes with a 5-attempt cap; verification links expire after 24h
+- Re-authentication required to disable 2FA or delete an account; the TOTP secret can't be re-generated while 2FA is on
+- Deleting an account revokes the linked Plaid items, so bank connections don't stay live
 - Redis-backed rate limiting (proxy-aware), security headers (incl. HSTS), CORS allow-list, timing-safe login, zxcvbn password strength
 
 ## Running locally

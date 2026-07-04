@@ -43,7 +43,10 @@ export default function BalancesCard() {
       </div>
 
       {banks === null ? (
-        <div className="bal-loading">Loading balances…</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }} aria-hidden="true">
+          <div className="skeleton" style={{ height: 38 }} />
+          <div className="skeleton" style={{ height: 38 }} />
+        </div>
       ) : banks.length === 0 ? (
         <div className="bal-loading">Balances are unavailable right now — try refreshing.</div>
       ) : (

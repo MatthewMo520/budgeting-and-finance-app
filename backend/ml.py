@@ -53,6 +53,29 @@ def rule_category(name: str):
     return None
 
 
+# ── Spend accounting ──────────────────────────────────────────────────────────
+# Transfer-like outflows are NOT spending: a credit-card payment moves money to
+# the card whose purchases are already logged, so counting it would double-count
+# every dollar. Same for transfers between the user's own accounts.
+NON_SPEND_LABELS = frozenset({"TRANSFER_OUT", "TRANSFER_IN", "LOAN_PAYMENTS", "INCOME"})
+
+# Display name → canonical Plaid-style label (shared by category edits, budgets
+# and insights; the frontend mirror lives in categories.jsx).
+DISPLAY_TO_LABEL = {
+    "Dining": "FOOD_AND_DRINK", "Groceries": "GROCERIES", "Transport": "TRANSPORTATION",
+    "Shopping": "GENERAL_MERCHANDISE", "Utilities": "RENT_AND_UTILITIES",
+    "Entertainment": "ENTERTAINMENT", "Health": "MEDICAL", "Travel": "TRAVEL",
+    "Income": "INCOME", "Transfer": "TRANSFER_OUT", "Payments": "LOAN_PAYMENTS",
+    "Other": "OTHER",
+}
+LABEL_TO_DISPLAY = {v: k for k, v in DISPLAY_TO_LABEL.items()}
+
+
+def is_spend(amount, label) -> bool:
+    """True when a transaction counts toward spending totals."""
+    return (amount or 0) > 0 and (label or "").upper() not in NON_SPEND_LABELS
+
+
 # Char-n-gram ML fallback, trained once on the seed corpus and cached in memory.
 _categorizer = None
 
@@ -93,7 +116,8 @@ def detect_recurring(txns):
 
     groups = defaultdict(list)
     for t in txns:
-        if (t.amount or 0) <= 0:  # outflows only
+        # Spend outflows only — card payments/transfers aren't subscriptions.
+        if not is_spend(t.amount, getattr(t, "ml_category", None)):
             continue
         groups[_normalize_merchant(t.name)].append(t)
 
@@ -120,12 +144,107 @@ def detect_recurring(txns):
                 "amount": round(amt_mean, 2),
                 "frequency": freq,
                 "occurrences": len(items),
+                "first_date": items[0].date.date().isoformat(),
                 "last_date": items[-1].date.date().isoformat(),
                 "category": items[-1].ml_category,
                 "estimated_monthly": round(amt_mean * (30.0 / avg_gap), 2),
             })
     results.sort(key=lambda r: -r["estimated_monthly"])
     return results
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+def _month_key(dt):
+    return dt.strftime("%Y-%m")
+
+
+def _prev_month_keys(now, n=3):
+    y, m = now.year, now.month
+    keys = []
+    for _ in range(n):
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+        keys.append(f"{y:04d}-{m:02d}")
+    return keys
+
+
+def compute_insights(txns, budgets=None, now=None):
+    """Rule-generated observations about the user's spending. Pure function —
+    takes ORM rows (or anything with name/amount/date/ml_category) and returns
+    [{type, severity, title, detail}], most important first."""
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    import statistics
+
+    now = now or datetime.utcnow()
+    this_month = _month_key(now)
+    prev_keys = _prev_month_keys(now, 3)
+    insights = []
+
+    spend_txns = [t for t in txns if is_spend(t.amount, getattr(t, "ml_category", None))]
+
+    # 1) Category spikes: this month ≥ 140% of the trailing-3-month average.
+    by_cat_month = defaultdict(lambda: defaultdict(float))
+    for t in spend_txns:
+        by_cat_month[(t.ml_category or "OTHER").upper()][_month_key(t.date)] += t.amount
+    for label, months in by_cat_month.items():
+        cur = months.get(this_month, 0)
+        avg = statistics.mean(months.get(k, 0) for k in prev_keys)
+        if avg > 0 and cur >= 1.4 * avg and cur - avg >= 50:
+            display = LABEL_TO_DISPLAY.get(label, label.title())
+            insights.append({
+                "type": "spike", "severity": "warn",
+                "title": f"{display} spending is up {round((cur / avg - 1) * 100)}%",
+                "detail": f"${cur:,.0f} so far this month vs your ${avg:,.0f} three-month average.",
+            })
+
+    # 2) New subscriptions: recurring charges that started in the last 45 days.
+    for r in detect_recurring(txns):
+        first = datetime.fromisoformat(r["first_date"])
+        if (now - first).days <= 45:
+            insights.append({
+                "type": "subscription", "severity": "info",
+                "title": f"New recurring charge: {r['name']}",
+                "detail": f"${r['amount']:,.2f} {r['frequency']} (≈ ${r['estimated_monthly']:,.0f}/mo), first seen {r['first_date']}.",
+            })
+
+    # 3) Possible duplicates: same merchant + same amount within 2 days (last 30 days).
+    recent = [t for t in spend_txns if (now - t.date).days <= 30]
+    seen = defaultdict(list)
+    for t in recent:
+        seen[(_normalize_merchant(t.name), round(t.amount, 2))].append(t)
+    for (merchant, amount), items in seen.items():
+        if len(items) < 2 or not merchant:
+            continue
+        items.sort(key=lambda x: x.date)
+        if any((items[i + 1].date - items[i].date).days <= 2 for i in range(len(items) - 1)):
+            insights.append({
+                "type": "duplicate", "severity": "warn",
+                "title": f"Possible duplicate charge: {items[-1].name}",
+                "detail": f"${amount:,.2f} charged {len(items)} times within a couple of days — worth a look.",
+            })
+
+    # 4) Budgets nearly used (current month).
+    if budgets:
+        display_spend = defaultdict(float)
+        for t in spend_txns:
+            if _month_key(t.date) == this_month:
+                display_spend[LABEL_TO_DISPLAY.get((t.ml_category or "OTHER").upper(), "Other")] += t.amount
+        for b in budgets:
+            spent = display_spend.get(b.category, 0)
+            if b.monthly_limit > 0 and spent >= 0.9 * b.monthly_limit:
+                pct = round(spent / b.monthly_limit * 100)
+                insights.append({
+                    "type": "budget", "severity": "alert" if pct >= 100 else "warn",
+                    "title": f"{b.category} budget {'exceeded' if pct >= 100 else 'almost used'}",
+                    "detail": f"${spent:,.0f} of your ${b.monthly_limit:,.0f} limit ({pct}%).",
+                })
+
+    order = {"alert": 0, "warn": 1, "info": 2}
+    insights.sort(key=lambda i: order.get(i["severity"], 3))
+    return insights
 
 
 def run_ml_for_user(user_id):
@@ -136,6 +255,12 @@ def run_ml_for_user(user_id):
     db = SessionLocal()
     try:
         run_ml_pipeline(db, user_id)
+        # New transactions may have pushed a budget past its threshold.
+        try:
+            from budget_alerts import check_and_send_budget_alerts
+            check_and_send_budget_alerts(db, user_id)
+        except Exception as e:
+            print(f"Budget alert check failed (continuing): {e}")
     finally:
         db.close()
 

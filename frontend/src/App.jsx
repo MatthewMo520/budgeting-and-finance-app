@@ -2,10 +2,12 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
 import { useAuth } from "./AuthContext"
 import { useTheme } from "./theme.jsx"
-import { displayCat } from "./categories.jsx"
+import { displayCat, isSpend } from "./categories.jsx"
 import MetricCards from "./components/MetricCards"
 import TrendChart from "./components/TrendChart"
 import BalancesCard from "./components/BalancesCard"
+import NetWorthChart from "./components/NetWorthChart"
+import Insights from "./components/Insights"
 import TransactionList from "./components/TransactionList"
 import Budgets from "./components/Budgets"
 import Recurring from "./components/Recurring"
@@ -93,6 +95,16 @@ function Header({ user, months, selectedMonth, onMonth, onLogout, onSetup2FA, on
           </button>
         ))}
       </div>
+      {months.length > 0 && (
+        <select
+          className="hdr-month-select"
+          value={selectedMonth || ""}
+          onChange={e => onMonth(e.target.value)}
+          aria-label="Select month"
+        >
+          {months.map(m => <option key={m} value={m}>{formatMonth(m)}</option>)}
+        </select>
+      )}
 
       <div className="hdr-right">
         {(months.length > 0 || user?.has_bank) && (
@@ -265,12 +277,13 @@ function Dashboard() {
   }
 
   const anomalies = transactions.filter(t => t.is_anomaly)
-  // Plaid: positive amount = money out (spend). Only outflows count toward spending.
-  const totalSpend = transactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
-  const prevSpend = prevTransactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
+  // Spend = positive outflows excluding card payments/transfers (those would
+  // double-count purchases already logged) — see isSpend in categories.jsx.
+  const totalSpend = transactions.reduce((s, t) => s + (isSpend(t) ? t.amount : 0), 0)
+  const prevSpend = prevTransactions.reduce((s, t) => s + (isSpend(t) ? t.amount : 0), 0)
 
   const categoryTotals = transactions.reduce((acc, t) => {
-    if (t.amount <= 0) return acc  // skip income / transfers-in
+    if (!isSpend(t)) return acc
     const cat = displayCat(t.ml_category)
     acc[cat] = (acc[cat] || 0) + t.amount
     return acc
@@ -334,9 +347,14 @@ function Dashboard() {
             </div>
           )}
           {loading ? (
-            <div style={{ textAlign: "center", color: "var(--text2)", fontSize: 14, padding: "48px 0" }}>
-              Loading transactions…
-            </div>
+            <>
+              <div className="metric-grid" aria-hidden="true">
+                {[0, 1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 110, borderRadius: "var(--r)" }} />)}
+              </div>
+              <div className="skeleton" aria-hidden="true" style={{ height: 220, borderRadius: "var(--r)" }} />
+              <div className="skeleton" aria-hidden="true" style={{ height: 320, borderRadius: "var(--r)" }} />
+              <span className="sr-only" role="status">Loading transactions…</span>
+            </>
           ) : transactions.length === 0 ? (
             <div style={{ textAlign: "center", color: "var(--text2)", fontSize: 14, padding: "48px 0" }}>
               No transactions for {formatMonth(selectedMonth)}.
@@ -344,7 +362,9 @@ function Dashboard() {
           ) : (
             <>
               <AnomalyAlert anomalies={anomalies} allTransactions={transactions} />
+              <Insights />
               <BalancesCard />
+              <NetWorthChart />
               <MetricCards
                 totalSpend={totalSpend}
                 prevSpend={prevSpend}
