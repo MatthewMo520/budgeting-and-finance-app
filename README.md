@@ -57,7 +57,7 @@ Try it without creating an account or linking a real bank:
 - Mandatory 2FA — authenticator app (TOTP) or emailed codes (SHA-256-hashed, 10-minute expiry, 5-attempt cap); the TOTP secret can't be re-generated while 2FA is on, and disabling 2FA or deleting the account requires the password again
 - Plaid access tokens and TOTP secrets encrypted at rest (Fernet); verification/reset tokens stored as SHA-256 hashes; verification links expire after 24h
 - Deleting an account revokes the linked Plaid items — bank connections don't stay live
-- Redis-backed rate limiting (proxy-aware), security headers incl. HSTS, explicit CORS allow-list, timing-safe login, zxcvbn password strength
+- Redis-backed rate limiting (proxy-aware), security headers incl. HSTS, explicit CORS allow-list, timing-safe login, zxcvbn password strength enforced server-side with a live meter in the UI
 
 ## How it's built
 

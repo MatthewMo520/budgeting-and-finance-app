@@ -1,5 +1,5 @@
 """Plaid sync engine (mocked Plaid client) + account deletion revocation."""
-from datetime import date
+from datetime import date, datetime
 
 from tests.integration.conftest import PASSWORD
 
@@ -85,6 +85,54 @@ def test_webhook_ignores_unknown_item(client):
     r = client.post("/plaid/webhook", json={"item_id": "nope", "webhook_type": "TRANSACTIONS"})
     assert r.status_code == 200
     assert r.json() == {"status": "ignored"}
+
+
+def test_reconcile_removes_stale_rows_only(client, make_user, auth_headers, db, monkeypatch):
+    """Orphaned rows (e.g. old pending duplicates) are deleted; live rows and
+    the sync cursor are untouched."""
+    import plaid_client as pc
+    from models import Transaction
+    tok, email = make_user("reconcile@example.com")
+    user, acct = _link_account(db, email)
+    acct.sync_cursor = "cursor-live"
+    # one row Plaid still knows, one orphan (the old pending-id duplicate)
+    db.add(Transaction(user_id=user.id, plaid_transaction_id="live-1", name="LCBO",
+                       amount=118.0, date=datetime(2026, 6, 15)))
+    db.add(Transaction(user_id=user.id, plaid_transaction_id="stale-pending-1", name="LCBO",
+                       amount=118.0, date=datetime(2026, 6, 15)))
+    db.commit()
+
+    cursors = []
+
+    def fake_full_sync(access_token, cursor, environment):
+        cursors.append(cursor)
+        return [FakePlaidTxn("live-1", "LCBO", 118.0, date(2026, 6, 15))], [], [], "ignored"
+
+    monkeypatch.setattr(pc, "sync_transactions", fake_full_sync)
+    r = client.post("/plaid/reconcile", headers=auth_headers(tok))
+    assert r.status_code == 200
+    assert r.json()["removed"] == 1
+    assert cursors == [None]  # full pull, not incremental
+
+    remaining = db.query(Transaction).filter(Transaction.user_id == user.id).all()
+    assert [t.plaid_transaction_id for t in remaining] == ["live-1"]
+    db.refresh(acct)
+    assert acct.sync_cursor == "cursor-live"  # cursor not clobbered
+
+
+def test_reconcile_refuses_when_bank_returns_nothing(client, make_user, auth_headers, db, monkeypatch):
+    import plaid_client as pc
+    from models import Transaction
+    tok, email = make_user("reconcile2@example.com")
+    user, acct = _link_account(db, email)
+    db.add(Transaction(user_id=user.id, plaid_transaction_id="only-1", name="Cafe",
+                       amount=10.0, date=datetime(2026, 6, 1)))
+    db.commit()
+
+    monkeypatch.setattr(pc, "sync_transactions", lambda t, c, e: ([], [], [], "x"))
+    r = client.post("/plaid/reconcile", headers=auth_headers(tok))
+    assert r.status_code == 409  # refuses to wipe everything on an empty compare
+    assert db.query(Transaction).filter(Transaction.user_id == user.id).count() == 1
 
 
 def test_delete_account_revokes_plaid_items(client, make_user, auth_headers, db, monkeypatch):

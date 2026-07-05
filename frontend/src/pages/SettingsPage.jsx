@@ -112,6 +112,23 @@ export default function SettingsPage() {
 
   const [accounts, setAccounts] = useState([])
   const [removingId, setRemovingId] = useState(null)
+  const [reconciling, setReconciling] = useState(false)
+  const [reconcileMsg, setReconcileMsg] = useState(null)
+
+  async function handleReconcile() {
+    setReconciling(true)
+    setReconcileMsg(null)
+    try {
+      const res = await apiFetch("/plaid/reconcile", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Cleanup failed — try again")
+      setReconcileMsg({ success: data.message })
+    } catch (err) {
+      setReconcileMsg({ error: err.message })
+    } finally {
+      setReconciling(false)
+    }
+  }
 
   async function loadAccounts() {
     try {
@@ -392,6 +409,8 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Linked banks">
+          {reconcileMsg?.error && <div className="auth-error">{reconcileMsg.error}</div>}
+          {reconcileMsg?.success && <div className="auth-success">{reconcileMsg.success}</div>}
           {accounts.length === 0 ? (
             <p style={{ fontSize: 14, color: "var(--text2)" }}>No banks connected yet. Use “+ Connect bank” on the dashboard.</p>
           ) : (
@@ -411,6 +430,21 @@ export default function SettingsPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+          {accounts.length > 0 && (
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+              <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 10 }}>
+                Seeing duplicate transactions? This re-checks your history against your bank and removes
+                anything it no longer reports.
+              </p>
+              <button
+                onClick={handleReconcile}
+                disabled={reconciling}
+                style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13, fontWeight: 600 }}
+              >
+                {reconciling ? "Checking with your bank…" : "Clean up duplicates"}
+              </button>
             </div>
           )}
         </Section>

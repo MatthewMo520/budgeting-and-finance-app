@@ -176,6 +176,52 @@ def get_networth(request: Request, db: Session = Depends(get_db), current_user: 
     ]
 
 
+# ── Data repair: reconcile against Plaid ─────────────────────────────────────
+
+@router.post("/plaid/reconcile")
+@limiter.limit("2/minute")
+def reconcile_transactions(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete local transactions Plaid no longer reports. Fixes duplicates left
+    behind by the old pending-transaction handling (a pending charge got a new
+    id when it posted) and rows from re-linked items. Pulls the full current
+    id set per account (cursor untouched, so incremental sync is unaffected)."""
+    accounts = db.query(LinkedAccount).filter(LinkedAccount.user_id == current_user.id).all()
+    if not accounts:
+        raise HTTPException(status_code=400, detail="No bank account linked.")
+
+    environment = pc.env_for_user(current_user)
+    known_ids = set()
+    for acct in accounts:
+        # Full pull from a None cursor; do NOT persist it — this is read-only.
+        added, modified, _removed, _cursor = pc.sync_transactions(acct.access_token, None, environment)
+        known_ids.update(t.transaction_id for t in added + modified)
+
+    if not known_ids:
+        # Plaid returned nothing (e.g. history still preparing) — deleting
+        # everything on that basis would be catastrophic, so bail out.
+        raise HTTPException(status_code=409, detail="Your bank returned no transactions to compare against — try again in a minute.")
+
+    stale = (
+        db.query(Transaction)
+        .filter(Transaction.user_id == current_user.id,
+                Transaction.plaid_transaction_id.notin_(known_ids))
+        .all()
+    )
+    removed_count = len(stale)
+    for row in stale:
+        db.delete(row)
+    db.commit()
+    return {
+        "removed": removed_count,
+        "message": f"Removed {removed_count} transaction(s) your bank no longer reports."
+        if removed_count else "Everything matches your bank — nothing to clean up.",
+    }
+
+
 # ── Manage linked accounts ────────────────────────────────────────────────────
 
 @router.get("/plaid/accounts")
