@@ -55,7 +55,11 @@ export default function BalancesCard() {
             b.error ? (
               <div key={i} className="bal-row">
                 <div className="bal-name">{b.institution}</div>
-                <div className="bal-sub">Couldn't reach this bank — try refreshing</div>
+                <div className="bal-sub">
+                  {b.error_code === "ITEM_LOGIN_REQUIRED"
+                    ? "Bank session expired — disconnect and relink it in Settings"
+                    : `Couldn't reach this bank — try refreshing${b.error_code ? ` (${b.error_code})` : ""}`}
+                </div>
               </div>
             ) : b.accounts.map((a, j) => (
               <div key={`${i}-${j}`} className="bal-row">

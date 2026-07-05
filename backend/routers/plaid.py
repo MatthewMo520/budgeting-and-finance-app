@@ -119,11 +119,20 @@ def get_balances_endpoint(
     result = []
     for acct in accounts:
         institution = acct.institution_name or "Linked bank"
-        # One bank failing (e.g. ITEM_LOGIN_REQUIRED) shouldn't take down the rest.
+        # One bank failing (e.g. ITEM_LOGIN_REQUIRED) shouldn't take down the rest,
+        # but surface the Plaid error code so failures are diagnosable.
         try:
             result.append({"institution": institution, "accounts": pc.get_balances(acct.access_token, environment)})
-        except Exception:
-            result.append({"institution": institution, "accounts": [], "error": True})
+        except plaid.ApiException as e:
+            try:
+                code = json.loads(e.body).get("error_code") or "PLAID_ERROR"
+            except (ValueError, TypeError):
+                code = "PLAID_ERROR"
+            print(f"Balance fetch failed for {institution} (item {acct.item_id}, env {environment}): {code}")
+            result.append({"institution": institution, "accounts": [], "error": True, "error_code": code})
+        except Exception as e:
+            print(f"Balance fetch failed for {institution} (item {acct.item_id}, env {environment}): {e!r}")
+            result.append({"institution": institution, "accounts": [], "error": True, "error_code": "INTERNAL"})
     _balance_cache[key] = (now, result)
     _record_balance_snapshot(db, current_user.id, result)
     return result
