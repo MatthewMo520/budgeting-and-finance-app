@@ -22,7 +22,7 @@ Try it without creating an account or linking a real bank:
 ## Features
 
 **Track**
-- Live per-account **balances** and a **net worth** chart built from daily snapshots
+- Per-account **balances** and a **net worth** chart built from daily snapshots
 - **Multiple linked banks** per user; transactions stay current via Plaid's cursor-based **/transactions/sync** + signed webhooks (handles corrections and removals, not just new rows)
 - Merchant **names and logos** from Plaid enrichment
 - **Honest spend accounting** — credit-card payments and inter-account transfers never count as spending, so a purchase and the payment that covers it are never double-counted

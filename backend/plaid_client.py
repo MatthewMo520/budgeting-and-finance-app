@@ -3,7 +3,7 @@ import plaid
 from plaid.api import plaid_api
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
-from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
+from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
@@ -115,9 +115,12 @@ def remove_item(access_token: str, environment: str = PLAID_ENV) -> None:
 
 
 def get_balances(access_token: str, environment: str = PLAID_ENV) -> list:
-    """Live balances for every account under one linked item."""
-    resp = _client_for(environment).accounts_balance_get(
-        AccountsBalanceGetRequest(access_token=access_token)
+    """Balances for every account under one linked item, as of Plaid's last
+    item update. Uses /accounts/get (included with Transactions access) rather
+    than /accounts/balance/get, which is a separately-enabled paid product and
+    returns INVALID_PRODUCT on Transactions-only production keys."""
+    resp = _client_for(environment).accounts_get(
+        AccountsGetRequest(access_token=access_token)
     )
     return [
         {
