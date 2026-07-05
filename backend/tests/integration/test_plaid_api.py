@@ -5,22 +5,24 @@ from tests.integration.conftest import PASSWORD
 
 
 class FakePlaidTxn:
-    def __init__(self, txn_id, name, amount, d, pending=False):
+    def __init__(self, txn_id, name, amount, d, pending=False, account_id="acc-1"):
         self.transaction_id = txn_id
         self.name = name
         self.merchant_name = name.title()
         self.logo_url = None
         self.counterparties = []
+        self.account_id = account_id
         self.amount = amount
         self.date = d
         self.pending = pending
         self.personal_finance_category = None
 
 
-def _link_account(db, email, item_id="item-1"):
+def _link_account(db, email, item_id="item-1", institution="TestBank"):
     from models import User, LinkedAccount
     user = db.query(User).filter(User.email == email).first()
-    acct = LinkedAccount(user_id=user.id, access_token="tok-123", item_id=item_id)
+    acct = LinkedAccount(user_id=user.id, access_token="tok-123", item_id=item_id,
+                         institution_name=institution)
     db.add(acct)
     db.commit()
     return user, acct
@@ -31,6 +33,7 @@ def test_sync_upserts_updates_and_removes(client, make_user, auth_headers, db, m
     tok, email = make_user("sync@example.com")
     user, acct = _link_account(db, email)
     H = auth_headers(tok)
+    monkeypatch.setattr(pc, "get_account_names", lambda token, env: {"acc-1": "Chequing ••1234"})
     calls = []
 
     t1 = FakePlaidTxn("p1", "Coffee Shop", 4.5, date(2026, 6, 3))
@@ -67,6 +70,8 @@ def test_sync_upserts_updates_and_removes(client, make_user, auth_headers, db, m
     assert {t["name"] for t in txns} == {"Coffee Shop"}          # p2 removed
     assert txns[0]["amount"] == 6.0                              # p1 updated in place
     assert txns[0]["merchant_name"] == "Coffee Shop"
+    assert txns[0]["account_name"] == "Chequing ••1234"          # tagged with its bank account
+    assert txns[0]["institution_name"] == "TestBank"
     db.refresh(acct)
     assert acct.sync_cursor == "cursor-2"
 

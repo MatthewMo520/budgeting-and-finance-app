@@ -56,7 +56,8 @@ def exchange_token(
         # webhook (or a manual Sync) will load transactions once they're ready.
         return {"transactions_synced": 0, "pending": True,
                 "message": "Bank linked! Your transactions are still being prepared — check back in a minute and hit Sync."}
-    added = _upsert_transactions(db, current_user.id, transactions)
+    account_names = _account_names_or_empty(access_token, environment)
+    added = _upsert_transactions(db, current_user.id, transactions, account_names, institution)
     background_tasks.add_task(run_ml_for_user, current_user.id)
     return {"transactions_synced": added}
 
@@ -269,7 +270,8 @@ def setup_sandbox(
     end = date.today()
     start = end - timedelta(days=365)
     transactions = pc.get_transactions(access_token, start, end)
-    added = _upsert_transactions(db, current_user.id, transactions)
+    account_names = _account_names_or_empty(access_token, "sandbox")
+    added = _upsert_transactions(db, current_user.id, transactions, account_names, "Chase (sandbox)")
     return {"transactions_synced": added}
 
 
@@ -331,9 +333,11 @@ def _merchant_fields(t):
     return merchant, logo
 
 
-def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
+def _upsert_transactions(db: Session, user_id, plaid_txns: list,
+                         account_names: dict | None = None, institution: str | None = None) -> int:
     """Insert new transactions and update existing ones in place (the sync API
     reports modified rows, e.g. amount corrections). Returns the number added."""
+    account_names = account_names or {}
     existing = {
         row.plaid_transaction_id: row
         for row in db.query(Transaction).filter(Transaction.user_id == user_id).all()
@@ -346,6 +350,8 @@ def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
             continue
         merchant, logo = _merchant_fields(t)
         category = t.personal_finance_category.primary if t.personal_finance_category else None
+        account_id = getattr(t, "account_id", None)
+        account_name = account_names.get(account_id)
         row = existing.get(t.transaction_id)
         if row:
             row.name = t.name
@@ -354,6 +360,9 @@ def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
             row.category = category
             row.merchant_name = merchant or row.merchant_name
             row.logo_url = logo or row.logo_url
+            row.plaid_account_id = account_id or row.plaid_account_id
+            row.account_name = account_name or row.account_name
+            row.institution_name = institution or row.institution_name
             continue
         txn = Transaction(
             user_id=user_id,
@@ -361,6 +370,9 @@ def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
             name=t.name,
             merchant_name=merchant,
             logo_url=logo,
+            plaid_account_id=account_id,
+            account_name=account_name,
+            institution_name=institution,
             amount=t.amount,
             date=datetime.combine(t.date, datetime.min.time()),
             category=category,
@@ -370,6 +382,14 @@ def _upsert_transactions(db: Session, user_id, plaid_txns: list) -> int:
         added += 1
     db.commit()
     return added
+
+
+def _account_names_or_empty(access_token: str, environment: str) -> dict:
+    """Account labels for tagging transactions; never fails the sync."""
+    try:
+        return pc.get_account_names(access_token, environment)
+    except Exception:
+        return {}
 
 
 def _sync_linked_account(db: Session, acct: LinkedAccount, environment: str):
@@ -388,7 +408,9 @@ def _sync_linked_account(db: Session, acct: LinkedAccount, environment: str):
         if code == "PRODUCT_NOT_READY":
             return None
         raise
-    new_count = _upsert_transactions(db, acct.user_id, added + modified)
+    account_names = _account_names_or_empty(acct.access_token, environment) if (added or modified) else {}
+    new_count = _upsert_transactions(db, acct.user_id, added + modified,
+                                     account_names, acct.institution_name)
     if removed_ids:
         db.query(Transaction).filter(
             Transaction.user_id == acct.user_id,

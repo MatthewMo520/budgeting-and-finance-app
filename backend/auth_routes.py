@@ -581,6 +581,30 @@ def update_profile(
     return {"message": "Profile updated."}
 
 
+# ── Email notification preferences ───────────────────────────────────────────
+
+class NotificationPrefs(BaseModel):
+    digest_enabled: bool | None = None
+    budget_alerts_enabled: bool | None = None
+
+
+@router.patch("/notifications")
+@limiter.limit("10/minute")
+def update_notifications(
+    request: Request,
+    body: NotificationPrefs,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if body.digest_enabled is not None:
+        current_user.digest_enabled = body.digest_enabled
+    if body.budget_alerts_enabled is not None:
+        current_user.budget_alerts_enabled = body.budget_alerts_enabled
+    db.commit()
+    return {"digest_enabled": current_user.digest_enabled,
+            "budget_alerts_enabled": current_user.budget_alerts_enabled}
+
+
 # ── Me ────────────────────────────────────────────────────────────────────────
 
 @router.get("/me")
@@ -596,4 +620,6 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         "profile_picture": current_user.profile_picture,
         "is_demo": current_user.is_demo,
         "has_bank": has_bank,
+        "digest_enabled": current_user.digest_enabled,
+        "budget_alerts_enabled": current_user.budget_alerts_enabled,
     }

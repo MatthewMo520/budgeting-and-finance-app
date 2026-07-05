@@ -24,11 +24,11 @@ Try it without creating an account or linking a real bank:
 **Track**
 - Per-account **balances** and a **net worth** chart built from daily snapshots
 - **Multiple linked banks** per user; transactions stay current via Plaid's cursor-based **/transactions/sync** + signed webhooks (handles corrections and removals, not just new rows)
-- Merchant **names and logos** from Plaid enrichment
+- Merchant **names and logos** from Plaid enrichment; every transaction is **tagged with its bank account**, with a per-bank filter on the list
 - **Honest spend accounting** — credit-card payments and inter-account transfers never count as spending, so a purchase and the payment that covers it are never double-counted
 
 **Understand**
-- Per-user **anomaly detection** (Isolation Forest) with plain-English explanations
+- Per-user **anomaly detection** (Isolation Forest) with plain-English explanations — and a **"mark as expected"** action the model remembers, so re-runs never re-flag it
 - Layered **auto-categorization** with one-click manual overrides the model learns from
 - A rule-based **insights feed**: category spending spikes, newly detected subscriptions, possible duplicate charges
 - **Recurring charge / subscription detection** with estimated monthly cost
@@ -37,7 +37,7 @@ Try it without creating an account or linking a real bank:
 - **Budgets** per category with progress bars and **email alerts** at 90% / 100%
 - **Cash-flow forecast** — "on track for ~$2,400 this month" from your run-rate plus upcoming recurring charges
 - **Savings goals** funded by your real net cash flow
-- A **month-end email recap**: total spend, top categories, anomalies, insights
+- A **month-end email recap**: total spend, top categories, anomalies, insights — both it and budget alerts have **opt-out toggles** in Settings
 
 **Experience**
 - 12-month **trend chart** (spending / income / net — click a bar to jump to that month), category **drill-down**, and a **daily-spend calendar heatmap**

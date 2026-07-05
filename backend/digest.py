@@ -70,7 +70,9 @@ def send_month_digests(db: Session, month: str | None = None) -> int:
     eligible user who hasn't received it. Returns the number sent."""
     month = month or last_closed_month()
     sent = 0
-    users = db.query(User).filter(User.is_verified.is_(True), User.is_demo.is_(False)).all()
+    users = db.query(User).filter(
+        User.is_verified.is_(True), User.is_demo.is_(False), User.digest_enabled.is_(True)
+    ).all()
     for user in users:
         already = db.query(DigestLog).filter(
             DigestLog.user_id == user.id, DigestLog.month == month

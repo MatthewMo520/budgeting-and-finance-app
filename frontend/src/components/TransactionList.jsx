@@ -24,19 +24,22 @@ function CatIcon({ mlCategory, logoUrl }) {
   )
 }
 
-export default function TransactionList({ transactions, onEditCategory, onExport, categoryFilter, onClearCategory }) {
+export default function TransactionList({ transactions, onEditCategory, onExport, categoryFilter, onClearCategory, onDismissAnomaly }) {
   const [filter, setFilter] = useState("all")
   const [showAll, setShowAll] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [query, setQuery] = useState("")
+  const [bankFilter, setBankFilter] = useState("")
 
-  useEffect(() => { setFilter("all"); setShowAll(false); setQuery("") }, [transactions])
+  useEffect(() => { setFilter("all"); setShowAll(false); setQuery(""); setBankFilter("") }, [transactions])
 
+  const banks = [...new Set(transactions.map(t => t.institution_name).filter(Boolean))]
   const anomalyCount = transactions.filter(t => t.is_anomaly).length
   const q = query.trim().toLowerCase()
   const filtered = transactions.filter(t =>
     (filter !== "anomalies" || t.is_anomaly) &&
     (!categoryFilter || displayCat(t.ml_category) === categoryFilter) &&
+    (!bankFilter || t.institution_name === bankFilter) &&
     (!q || t.name.toLowerCase().includes(q) || (t.merchant_name || "").toLowerCase().includes(q) || displayCat(t.ml_category).toLowerCase().includes(q))
   )
   const shown = showAll ? filtered : filtered.slice(0, 7)
@@ -50,6 +53,17 @@ export default function TransactionList({ transactions, onEditCategory, onExport
             <button className="filter-btn active" onClick={onClearCategory} title="Clear category filter">
               {categoryFilter} ✕
             </button>
+          )}
+          {banks.length > 1 && (
+            <select
+              className="tx-bank-select"
+              value={bankFilter}
+              onChange={e => setBankFilter(e.target.value)}
+              aria-label="Filter by bank"
+            >
+              <option value="">All banks</option>
+              {banks.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
           )}
           <input
             type="search"
@@ -99,6 +113,11 @@ export default function TransactionList({ transactions, onEditCategory, onExport
                     {displayCat(t.ml_category)} · {t.category_overridden ? "edited ✎" : "auto-categorized"}
                   </button>
                 )}
+                {t.account_name && (
+                  <span title={`${t.institution_name || "Bank"} — ${t.account_name}`}>
+                    {" · "}{t.institution_name ? `${t.institution_name} ` : ""}{t.account_name}
+                  </span>
+                )}
               </div>
             </div>
             <div className="txright">
@@ -109,8 +128,16 @@ export default function TransactionList({ transactions, onEditCategory, onExport
               <div className="txdate">{t.date?.slice(0, 10)}</div>
               <div>
                 {t.is_anomaly
-                  ? <span className="badge badge-anom">anomaly</span>
-                  : <span className="badge badge-norm">normal</span>}
+                  ? (
+                    <button
+                      className="badge badge-anom badge-btn"
+                      title="Not unusual? Click to mark as expected — it won't be flagged again"
+                      onClick={() => onDismissAnomaly?.(t.id)}
+                    >
+                      anomaly ✕
+                    </button>
+                  )
+                  : <span className="badge badge-norm">{t.anomaly_dismissed ? "expected" : "normal"}</span>}
               </div>
             </div>
           </div>

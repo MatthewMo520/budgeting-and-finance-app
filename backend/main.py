@@ -83,6 +83,12 @@ def _run_startup_migrations():
         "ALTER TABLE linked_accounts ADD COLUMN IF NOT EXISTS sync_cursor VARCHAR",
         "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS merchant_name VARCHAR",
         "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS logo_url VARCHAR",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS plaid_account_id VARCHAR",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS account_name VARCHAR",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS institution_name VARCHAR",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS anomaly_dismissed BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS digest_enabled BOOLEAN NOT NULL DEFAULT true",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS budget_alerts_enabled BOOLEAN NOT NULL DEFAULT true",
     ]
     try:
         with engine.begin() as conn:

@@ -14,7 +14,7 @@ function getReason(transaction, allTransactions) {
   return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} is unusually high for this category`
 }
 
-export default function AnomalyAlert({ anomalies, allTransactions = [] }) {
+export default function AnomalyAlert({ anomalies, allTransactions = [], onDismiss }) {
   if (!anomalies.length) return null
   const top = anomalies[0]
   const cat = displayCat(top.ml_category)
@@ -32,6 +32,9 @@ export default function AnomalyAlert({ anomalies, allTransactions = [] }) {
       <div className="alert-body">
         <strong>Anomaly detected</strong> — {cat.toLowerCase()} spend on {dateStr}: {reason}.
         {anomalies.length > 1 && <span> +{anomalies.length - 1} more flagged.</span>}
+        {onDismiss && (
+          <a className="alert-link" onClick={() => onDismiss(top.id)} role="button">Mark as expected</a>
+        )}
         <a className="alert-link" href="https://en.wikipedia.org/wiki/Isolation_forest" target="_blank" rel="noopener noreferrer">How is this detected? ↗</a>
       </div>
     </div>

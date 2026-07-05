@@ -366,7 +366,8 @@ def run_ml_pipeline(db: Session, user_id):
     preds = iso.predict(features)
     for t, score, pred in zip(txns, scores, preds):
         t.anomaly_score = float(score)
-        t.is_anomaly = bool(pred == -1)
+        # Respect user feedback: dismissed anomalies stay unflagged on re-runs.
+        t.is_anomaly = bool(pred == -1) and not getattr(t, "anomaly_dismissed", False)
 
     db.commit()
     return {

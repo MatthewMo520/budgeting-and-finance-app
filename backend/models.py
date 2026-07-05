@@ -30,6 +30,9 @@ class User(Base):
     token_version = Column(Integer, nullable=False, default=0, server_default=text("0"))
     # Shared demo account: exempt from mandatory 2FA, routed to Plaid sandbox.
     is_demo = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Email notification preferences
+    digest_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    budget_alerts_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -119,6 +122,10 @@ class Transaction(Base):
     name = Column(String, nullable=False)
     merchant_name = Column(String, nullable=True)  # Plaid's cleaned merchant name
     logo_url = Column(String, nullable=True)       # merchant logo from Plaid enrichment
+    # Which bank account this came from (denormalized for display/filtering)
+    plaid_account_id = Column(String, nullable=True)
+    account_name = Column(String, nullable=True)      # e.g. "Chequing ••1234"
+    institution_name = Column(String, nullable=True)  # e.g. "Tangerine - Personal"
     amount = Column(Float, nullable=False)
     date = Column(DateTime, nullable=False)
     category = Column(String, nullable=True)
@@ -128,3 +135,5 @@ class Transaction(Base):
     category_overridden = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_anomaly = Column(Boolean, default=False)
     anomaly_score = Column(Float, nullable=True)
+    # User feedback: "this is expected" — ML re-runs won't re-flag it.
+    anomaly_dismissed = Column(Boolean, nullable=False, default=False, server_default=text("false"))

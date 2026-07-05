@@ -20,6 +20,41 @@ function Field({ label, children }) {
   )
 }
 
+function NotificationToggle({ label, description, field, user, apiFetch, refreshUser }) {
+  const [saving, setSaving] = useState(false)
+  const enabled = user?.[field] !== false  // default on until profile loads
+
+  async function toggle() {
+    setSaving(true)
+    try {
+      const res = await apiFetch("/auth/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: !enabled }),
+      })
+      if (res.ok) await refreshUser()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <label style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16, cursor: "pointer" }}>
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={toggle}
+        disabled={saving}
+        style={{ marginTop: 3, width: 16, height: 16, accentColor: "var(--green-dark)" }}
+      />
+      <span>
+        <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{label}</span>
+        <span style={{ display: "block", fontSize: 13, color: "var(--text2)", marginTop: 1 }}>{description}</span>
+      </span>
+    </label>
+  )
+}
+
 export default function SettingsPage() {
   const { user, apiFetch, refreshUser, logout, saveTokens } = useAuth()
   const navigate = useNavigate()
@@ -335,6 +370,25 @@ export default function SettingsPage() {
               </>
             )}
           </div>
+        </Section>
+
+        <Section title="Email notifications">
+          <NotificationToggle
+            label="Month-end recap"
+            description="A summary of your spending, top categories and insights on the 1st of each month."
+            field="digest_enabled"
+            user={user}
+            apiFetch={apiFetch}
+            refreshUser={refreshUser}
+          />
+          <NotificationToggle
+            label="Budget alerts"
+            description="One email when a category budget passes 90% and 100% of its limit."
+            field="budget_alerts_enabled"
+            user={user}
+            apiFetch={apiFetch}
+            refreshUser={refreshUser}
+          />
         </Section>
 
         <Section title="Linked banks">

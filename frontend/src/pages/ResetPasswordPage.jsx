@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useSearchParams, Link } from "react-router-dom"
 import { AuthShell } from "./RegisterPage"
+import PasswordStrength, { usePasswordStrength } from "../components/PasswordStrength"
 
 const apiBase = import.meta.env.VITE_API_URL || "/api"
 
@@ -12,12 +13,15 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState("")
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(false)
+  const strength = usePasswordStrength(password)
+  const tooWeak = strength !== null && strength.score < 2
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError("")
     if (password !== confirm) { setError("Passwords do not match"); return }
     if (password.length < 8) { setError("Password must be at least 8 characters"); return }
+    if (tooWeak) { setError("Password is too weak — see the suggestion below the field"); return }
     setLoading(true)
     try {
       const res = await fetch(`${apiBase}/auth/reset-password`, {
@@ -72,6 +76,7 @@ export default function ResetPasswordPage() {
         <div className="field">
           <label>New password</label>
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" required />
+          <PasswordStrength strength={strength} />
         </div>
         <div className="field">
           <label>Confirm password</label>

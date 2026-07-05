@@ -146,6 +146,48 @@ def test_forecast_endpoint_shape(client, make_user, auth_headers, db):
     assert {"month", "spent_so_far", "projected_spend", "days_left", "upcoming_recurring"} <= set(body)
 
 
+def test_anomaly_dismissal_sticks_through_ml_rerun(client, make_user, auth_headers, db):
+    from models import Transaction
+    tok, email = make_user("anomaly@example.com")
+    H = auth_headers(tok)
+    user = _seed(db, email, [
+        ("an1", "Huge Charge", 5000.0, datetime(2026, 6, 5), "FOOD_AND_DRINK"),
+        ("an2", "Cafe", 10.0, datetime(2026, 6, 6), "FOOD_AND_DRINK"),
+        ("an3", "Cafe", 12.0, datetime(2026, 6, 7), "FOOD_AND_DRINK"),
+    ])
+    db.query(Transaction).filter(Transaction.plaid_transaction_id == "an1").update(
+        {Transaction.is_anomaly: True})
+    db.commit()
+
+    txns = client.get("/transactions", headers=H).json()
+    flagged = next(t for t in txns if t["name"] == "Huge Charge")
+    assert flagged["is_anomaly"] is True
+
+    r = client.patch(f"/transactions/{flagged['id']}/anomaly", headers=H, json={"dismissed": True})
+    assert r.status_code == 200 and r.json()["is_anomaly"] is False
+
+    # ML re-run must not re-flag a dismissed transaction
+    assert client.post("/run-ml", headers=H).status_code == 200
+    txns = client.get("/transactions", headers=H).json()
+    flagged = next(t for t in txns if t["name"] == "Huge Charge")
+    assert flagged["is_anomaly"] is False and flagged["anomaly_dismissed"] is True
+
+    # bogus ids 404 rather than 500
+    assert client.patch("/transactions/not-a-uuid/anomaly", headers=H, json={"dismissed": True}).status_code == 404
+
+
+def test_notification_preferences(client, make_user, auth_headers):
+    tok, _ = make_user("prefs@example.com")
+    H = auth_headers(tok)
+    me = client.get("/auth/me", headers=H).json()
+    assert me["digest_enabled"] is True and me["budget_alerts_enabled"] is True
+
+    r = client.patch("/auth/notifications", headers=H, json={"digest_enabled": False})
+    assert r.status_code == 200
+    me = client.get("/auth/me", headers=H).json()
+    assert me["digest_enabled"] is False and me["budget_alerts_enabled"] is True
+
+
 def test_insights_endpoint_returns_list(client, make_user, auth_headers, db):
     tok, email = make_user("insights@example.com")
     _seed(db, email, [("i1", "Cafe", 10.0, datetime(2026, 6, 5), "FOOD_AND_DRINK")])

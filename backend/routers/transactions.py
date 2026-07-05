@@ -40,6 +40,8 @@ def _serialize(t: Transaction) -> dict:
         "name": t.name,
         "merchant_name": t.merchant_name,
         "logo_url": t.logo_url,
+        "account_name": t.account_name,
+        "institution_name": t.institution_name,
         "amount": t.amount,
         "date": t.date.isoformat(),
         "category": t.category,
@@ -47,6 +49,7 @@ def _serialize(t: Transaction) -> dict:
         "category_overridden": t.category_overridden,
         "is_anomaly": t.is_anomaly,
         "anomaly_score": t.anomaly_score,
+        "anomaly_dismissed": t.anomaly_dismissed,
     }
 
 
@@ -126,6 +129,39 @@ def update_transaction_category(
     ).update({Transaction.ml_category: label, Transaction.category_overridden: True})
     db.commit()
     return {"message": "Category updated", "ml_category": label}
+
+
+class AnomalyUpdate(BaseModel):
+    dismissed: bool
+
+
+@router.patch("/transactions/{txn_id}/anomaly")
+@limiter.limit("60/minute")
+def update_transaction_anomaly(
+    request: Request,
+    txn_id: str,
+    body: AnomalyUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """User feedback on an anomaly flag: dismissed=true means "this is expected"
+    — the flag is cleared and ML re-runs won't re-flag the transaction."""
+    import uuid as _uuid
+    try:
+        tid = _uuid.UUID(txn_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn = db.query(Transaction).filter(
+        Transaction.id == tid, Transaction.user_id == current_user.id
+    ).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    txn.anomaly_dismissed = body.dismissed
+    if body.dismissed:
+        txn.is_anomaly = False
+    db.commit()
+    return {"message": "Marked as expected" if body.dismissed else "Anomaly flag restored",
+            "is_anomaly": txn.is_anomaly, "anomaly_dismissed": txn.anomaly_dismissed}
 
 
 @router.get("/insights")

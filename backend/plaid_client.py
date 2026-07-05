@@ -135,6 +135,18 @@ def get_balances(access_token: str, environment: str = PLAID_ENV) -> list:
     ]
 
 
+def get_account_names(access_token: str, environment: str = PLAID_ENV) -> dict:
+    """Map of Plaid account_id → display label like "Chequing ••1234"."""
+    resp = _client_for(environment).accounts_get(AccountsGetRequest(access_token=access_token))
+    names = {}
+    for a in resp.accounts:
+        label = a.name or (str(a.subtype).title() if a.subtype else "Account")
+        if a.mask:
+            label = f"{label} ••{a.mask}"
+        names[a.account_id] = label
+    return names
+
+
 def sync_transactions(access_token: str, cursor: str | None, environment: str = PLAID_ENV):
     """Cursor-based /transactions/sync. Returns (added, modified, removed_ids,
     next_cursor). A None/empty cursor performs the initial full-history sync.

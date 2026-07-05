@@ -19,7 +19,7 @@ def check_and_send_budget_alerts(db: Session, user_id) -> None:
     if not budgets:
         return
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
+    if not user or not user.budget_alerts_enabled:
         return
 
     now = datetime.utcnow()

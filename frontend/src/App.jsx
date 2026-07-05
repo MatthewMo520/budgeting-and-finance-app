@@ -304,6 +304,17 @@ function Dashboard() {
     } catch { /* ignore */ }
   }
 
+  async function handleDismissAnomaly(txnId) {
+    try {
+      const res = await apiFetch(`/transactions/${txnId}/anomaly`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dismissed: true }),
+      })
+      if (res.ok) loadTransactions(selectedMonth)
+    } catch { /* ignore */ }
+  }
+
   async function handleEditCategory(txnId, displayName) {
     try {
       const res = await apiFetch(`/transactions/${txnId}/category`, {
@@ -406,7 +417,7 @@ function Dashboard() {
             </div>
           ) : (
             <>
-              <AnomalyAlert anomalies={anomalies} allTransactions={transactions} />
+              <AnomalyAlert anomalies={anomalies} allTransactions={transactions} onDismiss={handleDismissAnomaly} />
               <Insights />
               <BalancesCard />
               <NetWorthChart />
@@ -440,6 +451,7 @@ function Dashboard() {
                 onExport={handleExportCsv}
                 categoryFilter={categoryFilter}
                 onClearCategory={() => setCategoryFilter(null)}
+                onDismissAnomaly={handleDismissAnomaly}
               />
             </>
           )}
