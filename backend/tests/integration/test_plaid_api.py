@@ -109,6 +109,7 @@ def test_reconcile_removes_stale_rows_only(client, make_user, auth_headers, db, 
         return [FakePlaidTxn("live-1", "LCBO", 118.0, date(2026, 6, 15))], [], [], "ignored"
 
     monkeypatch.setattr(pc, "sync_transactions", fake_full_sync)
+    monkeypatch.setattr(pc, "get_account_names", lambda token, env: {"acc-1": "Chequing ••1234"})
     r = client.post("/plaid/reconcile", headers=auth_headers(tok))
     assert r.status_code == 200
     assert r.json()["removed"] == 1
@@ -116,6 +117,9 @@ def test_reconcile_removes_stale_rows_only(client, make_user, auth_headers, db, 
 
     remaining = db.query(Transaction).filter(Transaction.user_id == user.id).all()
     assert [t.plaid_transaction_id for t in remaining] == ["live-1"]
+    db.refresh(remaining[0])
+    assert remaining[0].institution_name == "TestBank"       # tags backfilled
+    assert remaining[0].account_name == "Chequing ••1234"
     db.refresh(acct)
     assert acct.sync_cursor == "cursor-live"  # cursor not clobbered
 

@@ -182,13 +182,16 @@ def get_networth(request: Request, db: Session = Depends(get_db), current_user: 
 @limiter.limit("2/minute")
 def reconcile_transactions(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Delete local transactions Plaid no longer reports. Fixes duplicates left
     behind by the old pending-transaction handling (a pending charge got a new
     id when it posted) and rows from re-linked items. Pulls the full current
-    id set per account (cursor untouched, so incremental sync is unaffected)."""
+    id set per account (cursor untouched, so incremental sync is unaffected).
+    Also upserts everything the bank reports, which backfills bank/account
+    tags on rows imported before tagging existed."""
     accounts = db.query(LinkedAccount).filter(LinkedAccount.user_id == current_user.id).all()
     if not accounts:
         raise HTTPException(status_code=400, detail="No bank account linked.")
@@ -196,9 +199,14 @@ def reconcile_transactions(
     environment = pc.env_for_user(current_user)
     known_ids = set()
     for acct in accounts:
-        # Full pull from a None cursor; do NOT persist it — this is read-only.
+        # Full pull from a None cursor; do NOT persist it — this is read-only
+        # with respect to the incremental sync state.
         added, modified, _removed, _cursor = pc.sync_transactions(acct.access_token, None, environment)
-        known_ids.update(t.transaction_id for t in added + modified)
+        txns = added + modified
+        known_ids.update(t.transaction_id for t in txns)
+        if txns:
+            account_names = _account_names_or_empty(acct.access_token, environment)
+            _upsert_transactions(db, current_user.id, txns, account_names, acct.institution_name)
 
     if not known_ids:
         # Plaid returned nothing (e.g. history still preparing) — deleting
@@ -215,6 +223,8 @@ def reconcile_transactions(
     for row in stale:
         db.delete(row)
     db.commit()
+    if removed_count:
+        background_tasks.add_task(run_ml_for_user, current_user.id)
     return {
         "removed": removed_count,
         "message": f"Removed {removed_count} transaction(s) your bank no longer reports."
