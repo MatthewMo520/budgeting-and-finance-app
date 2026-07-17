@@ -45,7 +45,7 @@ export default function VerifyEmailPage() {
           <div style={{ fontSize: 40, marginBottom: 16 }}>❌</div>
           <div className="auth-h" style={{ marginBottom: 8 }}>Verification failed</div>
           <p style={{ color: "var(--text2)", fontSize: 14, marginBottom: 24 }}>{message}</p>
-          <Link to="/login" style={{ color: "var(--green-dark)", fontWeight: 600, fontSize: 14 }}>Back to login</Link>
+          <Link to="/login" style={{ color: "var(--accent)", fontWeight: 600, fontSize: 14 }}>Back to login</Link>
         </div>
       )}
     </AuthShell>

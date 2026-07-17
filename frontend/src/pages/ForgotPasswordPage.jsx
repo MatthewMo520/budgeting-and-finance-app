@@ -38,7 +38,7 @@ export default function ForgotPasswordPage() {
           <p style={{ color: "var(--text2)", fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
             If <strong style={{ color: "var(--text)" }}>{email}</strong> is registered, we sent a reset link. Check your inbox.
           </p>
-          <Link to="/login" style={{ color: "var(--green-dark)", fontWeight: 600, fontSize: 14 }}>Back to login</Link>
+          <Link to="/login" style={{ color: "var(--accent)", fontWeight: 600, fontSize: 14 }}>Back to login</Link>
         </div>
       </AuthShell>
     )

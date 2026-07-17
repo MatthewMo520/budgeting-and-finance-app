@@ -43,7 +43,7 @@ export default function NetWorthChart() {
     <div className="chart-card">
       <div className="trend-hdr">
         <div className="chart-title" style={{ marginBottom: 0 }}>Net worth</div>
-        <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(last.total_available)}</span>
+        <span className="num" style={{ fontSize: 15, fontWeight: 650 }}>{fmt(last.total_available)}</span>
         <span className="trend-sub" style={{ color: delta >= 0 ? "var(--green)" : "var(--red)" }}>
           {delta >= 0 ? "+" : "−"}{fmt(Math.abs(delta))} since {points[0].date}
         </span>

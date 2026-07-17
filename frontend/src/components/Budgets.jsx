@@ -37,9 +37,9 @@ export default function Budgets({ categoryTotals }) {
   }
 
   return (
-    <div className="card" style={{ background: "var(--surface)", borderRadius: "var(--r)", boxShadow: "var(--shadow)", padding: "24px 28px" }}>
+    <div className="chart-card">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-        <div style={{ fontSize: 16, fontWeight: 700 }}>Budgets</div>
+        <div className="chart-title" style={{ marginBottom: 0 }}>Budgets</div>
         <button onClick={() => setAdding(a => !a)} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", background: "none", border: "none", cursor: "pointer" }}>
           {adding ? "Cancel" : "+ Add budget"}
         </button>
@@ -67,7 +67,7 @@ export default function Budgets({ categoryTotals }) {
               <div key={b.category}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
                   <span style={{ fontWeight: 600 }}>{b.category}</span>
-                  <span style={{ color: over ? "var(--red)" : "var(--text2)" }}>
+                  <span className="num" style={{ color: over ? "var(--red)" : "var(--text2)" }}>
                     {fmt(spent)} / {fmt(b.monthly_limit)}
                     <button onClick={() => remove(b.category)} title="Remove" style={{ marginLeft: 10, background: "none", border: "none", color: "var(--text2)", cursor: "pointer" }}>✕</button>
                   </span>

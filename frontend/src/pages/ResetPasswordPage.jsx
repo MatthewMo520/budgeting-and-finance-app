@@ -46,7 +46,7 @@ export default function ResetPasswordPage() {
           <div style={{ fontSize: 40, marginBottom: 16 }}>❌</div>
           <div className="auth-h" style={{ marginBottom: 8 }}>Invalid link</div>
           <p style={{ color: "var(--text2)", fontSize: 14, marginBottom: 24 }}>This reset link is missing or malformed.</p>
-          <Link to="/forgot-password" style={{ color: "var(--green-dark)", fontWeight: 600, fontSize: 14 }}>Request a new one</Link>
+          <Link to="/forgot-password" style={{ color: "var(--accent)", fontWeight: 600, fontSize: 14 }}>Request a new one</Link>
         </div>
       </AuthShell>
     )

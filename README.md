@@ -9,6 +9,8 @@ A full-stack personal finance app: link real bank accounts, see where your money
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?logo=scikitlearn&logoColor=white)
 ![Plaid](https://img.shields.io/badge/Plaid-111111?logoColor=white)
 
+![Fintrack dashboard](docs/screenshot.png)
+
 ## Live demo
 
 Try it without creating an account or linking a real bank:

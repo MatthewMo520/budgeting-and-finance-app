@@ -30,6 +30,7 @@ function useCountUp(target) {
   return val
 }
 
+// Hero band: monthly spend as the headline figure, compact stats down the side.
 export default function MetricCards({ totalSpend, prevSpend, transactionCount, prevCount, anomalyCount, topCategory, forecast }) {
   const pct = prevSpend > 0 ? ((totalSpend - prevSpend) / prevSpend) * 100 : null
   const countDiff = prevCount > 0 ? transactionCount - prevCount : null
@@ -37,54 +38,49 @@ export default function MetricCards({ totalSpend, prevSpend, transactionCount, p
   const countVal = useCountUp(transactionCount)
   const anomVal = useCountUp(anomalyCount)
 
-  const cards = [
-    {
-      label: "Monthly spend",
-      value: fmt(spendVal),
-      sub: pct !== null
-        ? { cls: pct > 0 ? "red" : "green", text: `${pct > 0 ? "↑" : "↓"} ${Math.abs(pct).toFixed(0)}% vs last month` }
-        : { cls: "muted", text: "No previous month data" },
-      extra: forecast && forecast.projected_spend > 0 && forecast.days_left > 0
-        ? `on track for ~${fmt(forecast.projected_spend)} this month`
-        : null,
-    },
-    {
-      label: "Transactions",
-      value: Math.round(countVal),
-      sub: countDiff !== null
-        ? { cls: "muted", text: countDiff === 0 ? "Same as last month" : `${countDiff > 0 ? "+" : ""}${countDiff} vs last month` }
-        : { cls: "muted", text: "No previous month data" },
-    },
-    {
-      label: "Anomalies flagged",
-      value: Math.round(anomVal),
-      valueColor: anomalyCount > 0 ? "var(--red)" : "var(--green)",
-      sub: anomalyCount > 0
-        ? { cls: "amber", text: "Needs review" }
-        : { cls: "green", text: "All clear" },
-    },
-    {
-      label: "Top category",
-      value: topCategory?.[0]?.replace(/_/g, " ") ?? "—",
-      valueSize: 22,
-      sub: topCategory
-        ? { cls: "green", text: `${fmt(topCategory[1])} this month` }
-        : { cls: "muted", text: "No data" },
-    },
-  ]
+  const delta = pct !== null
+    ? { cls: pct > 0 ? "red" : "green", text: `${pct > 0 ? "↑" : "↓"} ${Math.abs(pct).toFixed(0)}% vs last month` }
+    : { cls: "muted", text: "No previous month data" }
 
   return (
-    <div className="metric-grid">
-      {cards.map(card => (
-        <div key={card.label} className="mcard">
-          <div className="mcard-label">{card.label}</div>
-          <div className="mcard-value" style={{ color: card.valueColor, fontSize: card.valueSize }}>
-            {card.value}
+    <div className="hero">
+      <div className="hero-main">
+        <div className="eyebrow">Monthly spend</div>
+        <div className="hero-value">{fmt(spendVal)}</div>
+        <div className={`hero-delta ${delta.cls}`}>{delta.text}</div>
+        {forecast && forecast.projected_spend > 0 && forecast.days_left > 0 && (
+          <div className="hero-note">On track for ~{fmt(forecast.projected_spend)} this month</div>
+        )}
+      </div>
+      <div className="hero-side">
+        <div className="hero-stat">
+          <div>
+            <div className="hero-stat-label">Transactions</div>
+            <div className="hero-stat-sub">
+              {countDiff !== null
+                ? countDiff === 0 ? "Same as last month" : `${countDiff > 0 ? "+" : ""}${countDiff} vs last month`
+                : "No previous month data"}
+            </div>
           </div>
-          <div className={`mcard-sub ${card.sub.cls}`}>{card.sub.text}</div>
-          {card.extra && <div className="mcard-extra">{card.extra}</div>}
+          <div className="hero-stat-value">{Math.round(countVal)}</div>
         </div>
-      ))}
+        <div className="hero-stat">
+          <div>
+            <div className="hero-stat-label">Anomalies flagged</div>
+            <div className="hero-stat-sub">{anomalyCount > 0 ? "Needs review" : "All clear"}</div>
+          </div>
+          <div className="hero-stat-value" style={{ color: anomalyCount > 0 ? "var(--amber)" : "var(--green)" }}>
+            {Math.round(anomVal)}
+          </div>
+        </div>
+        <div className="hero-stat">
+          <div>
+            <div className="hero-stat-label">Top category</div>
+            <div className="hero-stat-sub">{topCategory ? `${fmt(topCategory[1])} this month` : "No data"}</div>
+          </div>
+          <div className="hero-stat-value plain">{topCategory?.[0]?.replace(/_/g, " ") ?? "—"}</div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -114,7 +114,7 @@ function Header({ user, months, selectedMonth, onMonth, onLogout, onSetup2FA, on
             {syncing ? "Syncing…" : "↻ Sync"}
           </button>
         )}
-        <PlaidLinkButton onSuccess={onConnectBank} className="hdr-connect" label="+ Connect bank" />
+        <PlaidLinkButton onSuccess={onConnectBank} className="hdr-connect solid" label="+ Connect bank" />
 
         <div style={{ position: "relative" }} ref={menuRef}>
           <button className="hdr-userbtn" onClick={e => { e.stopPropagation(); setMenuOpen(v => !v) }}>
@@ -404,9 +404,7 @@ function Dashboard() {
           )}
           {loading ? (
             <>
-              <div className="metric-grid" aria-hidden="true">
-                {[0, 1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 110, borderRadius: "var(--r)" }} />)}
-              </div>
+              <div className="skeleton" aria-hidden="true" style={{ height: 168, borderRadius: "var(--r)" }} />
               <div className="skeleton" aria-hidden="true" style={{ height: 220, borderRadius: "var(--r)" }} />
               <div className="skeleton" aria-hidden="true" style={{ height: 320, borderRadius: "var(--r)" }} />
               <span className="sr-only" role="status">Loading transactions…</span>
@@ -419,8 +417,6 @@ function Dashboard() {
             <>
               <AnomalyAlert anomalies={anomalies} allTransactions={transactions} onDismiss={handleDismissAnomaly} />
               <Insights />
-              <BalancesCard />
-              <NetWorthChart />
               <MetricCards
                 totalSpend={totalSpend}
                 prevSpend={prevSpend}
@@ -437,6 +433,12 @@ function Dashboard() {
                 selectedCategory={categoryFilter}
                 onSelectCategory={toggleCategoryFilter}
               />
+              {user?.has_bank && (
+                <div className="duo-grid">
+                  <BalancesCard />
+                  <NetWorthChart />
+                </div>
+              )}
               <div className="duo-grid">
                 <Budgets categoryTotals={categoryTotals} />
                 <Goals />

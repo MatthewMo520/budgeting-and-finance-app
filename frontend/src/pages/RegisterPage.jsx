@@ -60,7 +60,7 @@ export default function RegisterPage() {
           <p style={{ color: "var(--text2)", fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
             We sent a verification link to <strong style={{ color: "var(--text)" }}>{email}</strong>.
           </p>
-          <Link to="/login" style={{ color: "var(--green-dark)", fontWeight: 600, fontSize: 14 }}>Back to login</Link>
+          <Link to="/login" style={{ color: "var(--accent)", fontWeight: 600, fontSize: 14 }}>Back to login</Link>
         </div>
       </AuthShell>
     )

@@ -4,8 +4,8 @@ import { useAuth } from "../AuthContext"
 
 function Section({ title, children }) {
   return (
-    <div style={{ background: "var(--surface)", borderRadius: "var(--r)", boxShadow: "var(--shadow)", padding: "28px 32px", marginBottom: 18 }}>
-      <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-.2px", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>{title}</div>
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "28px 32px", marginBottom: 16 }}>
+      <div className="chart-title" style={{ marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>{title}</div>
       {children}
     </div>
   )
@@ -45,7 +45,7 @@ function NotificationToggle({ label, description, field, user, apiFetch, refresh
         checked={enabled}
         onChange={toggle}
         disabled={saving}
-        style={{ marginTop: 3, width: 16, height: 16, accentColor: "var(--green-dark)" }}
+        style={{ marginTop: 3, width: 16, height: 16, accentColor: "var(--btn-bg)" }}
       />
       <span>
         <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{label}</span>
@@ -267,7 +267,7 @@ export default function SettingsPage() {
               <div style={{ position: "relative" }}>
                 {avatarPreview
                   ? <img src={avatarPreview} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--border)" }} />
-                  : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--green-dark)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700 }}>
+                  : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--btn-bg)", color: "var(--btn-fg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700 }}>
                       {(user?.username?.[0] || user?.email?.[0] || "U").toUpperCase()}
                     </div>
                 }
@@ -348,7 +348,7 @@ export default function SettingsPage() {
                 </p>
                 <button
                   onClick={() => navigate("/setup-2fa")}
-                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid var(--green-border)", background: "var(--green-bg)", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}
+                  style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid var(--accent-border)", background: "var(--accent-bg)", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}
                 >
                   Set up authenticator
                 </button>
@@ -380,7 +380,7 @@ export default function SettingsPage() {
                 </p>
                 <button
                   onClick={() => navigate("/setup-2fa")}
-                  style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid var(--green-border)", background: "var(--green-bg)", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}
+                  style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid var(--accent-border)", background: "var(--accent-bg)", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}
                 >
                   Set up email codes
                 </button>

@@ -22,10 +22,10 @@ export default function Recurring() {
   const monthlyTotal = items.reduce((s, r) => s + r.estimated_monthly, 0)
 
   return (
-    <div className="card" style={{ background: "var(--surface)", borderRadius: "var(--r)", boxShadow: "var(--shadow)", padding: "24px 28px" }}>
+    <div className="chart-card">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-        <div style={{ fontSize: 16, fontWeight: 700 }}>Recurring & subscriptions</div>
-        <div style={{ fontSize: 13, color: "var(--text2)" }}>≈ {fmt(monthlyTotal)}/mo</div>
+        <div className="chart-title" style={{ marginBottom: 0 }}>Recurring & subscriptions</div>
+        <div className="num" style={{ fontSize: 13, color: "var(--text2)" }}>≈ {fmt(monthlyTotal)}/mo</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {items.map((r, i) => (
@@ -37,8 +37,8 @@ export default function Recurring() {
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{fmt(r.amount)}</div>
-              <div style={{ fontSize: 12, color: "var(--text2)" }}>≈ {fmt(r.estimated_monthly)}/mo</div>
+              <div className="num" style={{ fontSize: 14, fontWeight: 600 }}>{fmt(r.amount)}</div>
+              <div className="num" style={{ fontSize: 12, color: "var(--text2)" }}>≈ {fmt(r.estimated_monthly)}/mo</div>
             </div>
           </div>
         ))}

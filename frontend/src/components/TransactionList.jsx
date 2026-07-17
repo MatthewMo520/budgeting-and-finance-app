@@ -12,13 +12,13 @@ function CatIcon({ mlCategory, logoUrl }) {
         src={logoUrl}
         alt=""
         loading="lazy"
-        style={{ width: 40, height: 40, borderRadius: 10, objectFit: "cover", background: bg, flexShrink: 0 }}
+        style={{ width: 36, height: 36, borderRadius: 9, objectFit: "cover", background: bg, flexShrink: 0 }}
         onError={e => { e.currentTarget.style.display = "none" }}
       />
     )
   }
   return (
-    <div className="txicon" style={{ width: 40, height: 40, background: bg, color }}>
+    <div className="txicon" style={{ width: 36, height: 36, background: bg, color }}>
       {ICONS[name] || ICONS.Other}
     </div>
   )
@@ -122,7 +122,7 @@ export default function TransactionList({ transactions, onEditCategory, onExport
             </div>
             <div className="txright">
               {/* Plaid: positive = money out (spend), negative = money in (income/refund). */}
-              <div className="txamt" style={t.amount < 0 ? { color: "var(--accent)" } : undefined}>
+              <div className="txamt" style={t.amount < 0 ? { color: "var(--green)" } : undefined}>
                 {t.amount < 0 ? "+" : "-"}{fmt(t.amount)}
               </div>
               <div className="txdate">{t.date?.slice(0, 10)}</div>

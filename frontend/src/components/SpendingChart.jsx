@@ -53,8 +53,8 @@ function DonutChart({ categoryTotals, totalSpend, selectedCategory, onSelectCate
             <title>{`${s.name} — ${fmt(s.val)} (click to filter transactions)`}</title>
           </path>
         ))}
-        <text x="100" y="92" textAnchor="middle" fontSize="21" fontWeight="700" fill="var(--text)" fontFamily="DM Sans,system-ui,sans-serif">{fmtK(totalSpend)}</text>
-        <text x="100" y="111" textAnchor="middle" fontSize="11.5" fill="var(--text2)" fontFamily="DM Sans,system-ui,sans-serif">total</text>
+        <text x="100" y="92" textAnchor="middle" fontSize="20" fontWeight="600" fill="var(--text)" fontFamily="var(--font-mono)">{fmtK(totalSpend)}</text>
+        <text x="100" y="111" textAnchor="middle" fontSize="11.5" fill="var(--text2)" fontFamily="var(--font-sans)">total</text>
       </svg>
       <div className="donut-legend">
         {segs.map((s, i) => (

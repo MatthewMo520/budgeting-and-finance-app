@@ -20,20 +20,22 @@ export const PLAID_TO_DISPLAY = {
   BANK_FEES: "Other",
 }
 
-// Mark colors validated for colorblind separation on light + dark surfaces
-// (identity is never color-alone: every use pairs the color with a label/icon).
+// Mark colors come from the theme (--cat-* tokens in index.css) so they adapt
+// to light/dark automatically. Values are validated for colorblind separation
+// on both surfaces (identity is never color-alone: every use pairs the color
+// with a label/icon).
 export const CAT = {
-  Groceries:     { color: "#22c55e" },
-  Dining:        { color: "#ef4444" },
-  Transport:     { color: "#3b82f6" },
-  Shopping:      { color: "#d946ef" },
-  Utilities:     { color: "#b45309" },
-  Entertainment: { color: "#f59e0b" },
-  Health:        { color: "#10b981" },
-  Payments:      { color: "#64748b" },
-  Transfer:      { color: "#78716c" },
-  Income:        { color: "#16a34a" },
-  Other:         { color: "#9ca3af" },
+  Groceries:     { color: "var(--cat-groceries)" },
+  Dining:        { color: "var(--cat-dining)" },
+  Transport:     { color: "var(--cat-transport)" },
+  Shopping:      { color: "var(--cat-shopping)" },
+  Utilities:     { color: "var(--cat-utilities)" },
+  Entertainment: { color: "var(--cat-entertainment)" },
+  Health:        { color: "var(--cat-health)" },
+  Payments:      { color: "var(--cat-payments)" },
+  Transfer:      { color: "var(--cat-transfer)" },
+  Income:        { color: "var(--cat-income)" },
+  Other:         { color: "var(--cat-other)" },
 }
 
 // Display categories that do NOT count as spending: card payments and

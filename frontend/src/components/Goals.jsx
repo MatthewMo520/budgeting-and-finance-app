@@ -37,9 +37,9 @@ export default function Goals() {
   }
 
   return (
-    <div className="card" style={{ background: "var(--surface)", borderRadius: "var(--r)", boxShadow: "var(--shadow)", padding: "24px 28px" }}>
+    <div className="chart-card">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-        <div style={{ fontSize: 16, fontWeight: 700 }}>Savings goals</div>
+        <div className="chart-title" style={{ marginBottom: 0 }}>Savings goals</div>
         <button onClick={() => setAdding(a => !a)} style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", background: "none", border: "none", cursor: "pointer" }}>
           {adding ? "Cancel" : "+ Add goal"}
         </button>
@@ -73,7 +73,7 @@ export default function Goals() {
                     {g.name}{done && " 🎉"}
                     {g.target_date && <span style={{ color: "var(--text2)", fontWeight: 500 }}> · by {g.target_date}</span>}
                   </span>
-                  <span style={{ color: "var(--text2)" }}>
+                  <span className="num" style={{ color: "var(--text2)" }}>
                     {fmt(g.saved)} / {fmt(g.target_amount)}
                     <button onClick={() => remove(g.id)} title="Remove" style={{ marginLeft: 10, background: "none", border: "none", color: "var(--text2)", cursor: "pointer" }}>✕</button>
                   </span>
